@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Hava Bateri</title>
+<style>
+  :root{
+    --bg:#07080c; --surface:rgba(16,18,26,.82); --line:rgba(255,255,255,.14);
+    --text:#f3f5fa; --muted:#9aa3b5; --accent:#ff4fd8; --accent2:#3df5c8; --danger:#ff5a5a;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;overflow:hidden;
+    touch-action:none;user-select:none;-webkit-user-select:none}
+  canvas{position:fixed;inset:0;width:100%;height:100%;display:block}
+  video{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+  #hud{position:fixed;left:0;right:0;top:0;padding:calc(env(safe-area-inset-top) + 10px) 14px 10px;
+    display:flex;justify-content:space-between;align-items:center;font-size:13px;color:var(--muted);pointer-events:none}
+  #hud b{color:var(--text);font-weight:600}
+  #overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:24px;
+    background:radial-gradient(circle at 50% 35%,#1a1030 0%,var(--bg) 70%)}
+  .card{width:100%;max-width:360px;background:var(--surface);border:1px solid var(--line);border-radius:20px;
+    padding:28px 22px;text-align:center}
+  h1{margin:0 0 8px;font-size:28px;letter-spacing:.5px}
+  p{margin:0 0 18px;color:var(--muted);font-size:15px;line-height:1.45}
+  button{appearance:none;border:0;border-radius:14px;min-height:52px;width:100%;font-size:17px;font-weight:700;
+    color:#12041a;background:linear-gradient(90deg,var(--accent),var(--accent2));cursor:pointer}
+  button:active{transform:scale(.98)}
+  button[disabled]{opacity:.55}
+  #msg{margin-top:14px;min-height:20px;font-size:14px;color:var(--muted)}
+  #msg.err{color:var(--danger)}
+  .hidden{display:none!important}
+</style>
+</head>
+<body>
+<video id="cam" playsinline muted autoplay></video>
+<canvas id="cv"></canvas>
+<div id="hud" class="hidden"><span>Hava Bateri</span><span id="stat">el aranıyor…</span></div>
+
+<div id="overlay">
+  <div class="card">
+    <h1>Hava Bateri</h1>
+    <p>Telefonu karşına koy, bir adım geri çekil. İşaret parmağınla ekrandaki davullara havada vur.</p>
+    <button id="start">Başla</button>
+    <div id="msg"></div>
+  </div>
+</div>
+
+<script type="module">
+const MP_VER = "0.10.14";
+const MP_URL = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VER}`;
+const MODEL = "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
+
+const $ = id => document.getElementById(id);
+const cv = $("cv"), ctx = cv.getContext("2d"), cam = $("cam");
+const overlay = $("overlay"), msg = $("msg"), startBtn = $("start"), hud = $("hud"), stat = $("stat");
+
+let W = 0, H = 0, DPR = 1;
+function resize(){
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth; H = window.innerHeight;
+  cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  layoutPads();
+}
+
+/* ---------- Davullar ---------- */
+const PADS = [
+  { id:"crash", ad:"Zil",     x:.20, y:.20, c:"#ffd23d" },
+  { id:"tom1",  ad:"Tom",     x:.80, y:.20, c:"#3df5c8" },
+  { id:"hihat", ad:"Hi-Hat",  x:.16, y:.44, c:"#7ab8ff" },
+  { id:"tom2",  ad:"Alt Tom", x:.84, y:.44, c:"#b48cff" },
+  { id:"snare", ad:"Trampet", x:.27, y:.68, c:"#ff4fd8" },
+  { id:"floor", ad:"Floor",   x:.73, y:.68, c:"#ff8a3d" },
+  { id:"kick",  ad:"Kick",    x:.50, y:.87, c:"#ff5a5a" },
+];
+function layoutPads(){
+  const r = Math.max(40, Math.min(W, H) * 0.125);
+  for (const p of PADS){ p.px = p.x * W; p.py = p.y * H; p.r = r; p.flash = p.flash || 0; p.last = p.last || 0; }
+}
+
+/* ---------- Ses (dosyasız, sentez) ---------- */
+let AC = null, master = null, noiseBuf = null;
+function initAudio(){
+  AC = new (window.AudioContext || window.webkitAudioContext)();
+  master = AC.createDynamicsCompressor();
+  const g = AC.createGain(); g.gain.value = 0.9;
+  master.connect(g); g.connect(AC.destination);
+  noiseBuf = AC.createBuffer(1, AC.sampleRate * 2, AC.sampleRate);
+  const d = noiseBuf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+}
+function env(v, t, dur){
+  const g = AC.createGain();
+  g.gain.setValueAtTime(Math.max(v, 0.0001), t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  g.connect(master); return g;
+}
+function tone(f0, f1, dur, v, type = "sine"){
+  const t = AC.currentTime, o = AC.createOscillator();
+  o.type = type; o.frequency.setValueAtTime(f0, t);
+  o.frequency.exponentialRampToValueAtTime(f1, t + dur * 0.8);
+  o.connect(env(v, t, dur)); o.start(t); o.stop(t + dur + 0.02);
+}
+function noise(dur, v, type, freq, q = 0.8){
+  const t = AC.currentTime, s = AC.createBufferSource(), f = AC.createBiquadFilter();
+  s.buffer = noiseBuf; f.type = type; f.frequency.value = freq; f.Q.value = q;
+  s.connect(f); f.connect(env(v, t, dur)); s.start(t, Math.random()); s.stop(t + dur + 0.02);
+}
+function play(id, v){
+  if (!AC) return;
+  if (AC.state !== "running") AC.resume();
+  v = 0.35 + 0.65 * v;
+  switch (id){
+    case "kick":  tone(150, 42, 0.38, 1.0 * v); noise(0.03, 0.3 * v, "lowpass", 1200); break;
+    case "snare": noise(0.2, 0.8 * v, "highpass", 1400); tone(210, 140, 0.12, 0.5 * v, "triangle"); break;
+    case "hihat": noise(0.06, 0.5 * v, "highpass", 8000); break;
+    case "crash": noise(1.3, 0.55 * v, "highpass", 4500); noise(0.5, 0.3 * v, "bandpass", 9000, 2); break;
+    case "tom1":  tone(260, 150, 0.32, 0.9 * v); break;
+    case "tom2":  tone(190, 105, 0.38, 0.9 * v); break;
+    case "floor": tone(130, 68, 0.48, 0.95 * v); break;
+  }
+}
+
+/* ---------- Efekt: kıvılcım + şimşek ---------- */
+const sparks = [], bolts = [];
+function burst(p, v){
+  const n = 10 + Math.round(v * 18);
+  for (let i = 0; i < n; i++){
+    const a = Math.random() * Math.PI * 2, s = (90 + Math.random() * 380) * (0.5 + v);
+    sparks.push({ x:p.px, y:p.py, vx:Math.cos(a)*s, vy:Math.sin(a)*s, life:0.35 + Math.random()*0.3, t:0, c:p.c });
+  }
+  p.flash = 1;
+}
+function hit(p, v, now){
+  if (now - p.last < 90) return;
+  p.last = now; play(p.id, v); burst(p, v);
+  if (navigator.vibrate) { try { navigator.vibrate(8); } catch(e){} }
+}
+
+/* ---------- El takibi ---------- */
+let lm = null, lastVideoT = -1;
+const tips = {};           // el başına işaret parmağı ucu durumu
+let handsNow = [];
+const BONES = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],
+               [9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
+
+function mapPt(pt){          // kamera -> ekran (ayna, "cover" yerleşim)
+  const vw = cam.videoWidth, vh = cam.videoHeight;
+  const s = Math.max(W / vw, H / vh);
+  const ox = (W - vw * s) / 2, oy = (H - vh * s) / 2;
+  return { x: ox + (1 - pt.x) * vw * s, y: oy + pt.y * vh * s };
+}
+
+function track(now){
+  if (!lm || cam.readyState < 2 || cam.currentTime === lastVideoT) return;
+  lastVideoT = cam.currentTime;
+  let res;
+  try { res = lm.detectForVideo(cam, now); } catch(e){ return; }
+  handsNow = (res.landmarks || []).map(h => h.map(mapPt));
+  stat.innerHTML = handsNow.length ? `<b>${handsNow.length}</b> el` : "el aranıyor…";
+
+  const seen = {};
+  handsNow.forEach((h, i) => {
+    const key = (res.handedness?.[i]?.[0]?.categoryName || "H") + i;
+    seen[key] = 1;
+    const tip = h[8], st = tips[key] || (tips[key] = { x:tip.x, y:tip.y, t:now, inside:{} });
+    const dt = Math.max((now - st.t) / 1000, 0.001);
+    const speed = Math.hypot(tip.x - st.x, tip.y - st.y) / dt / H;   // ekran boyu / sn
+    for (const p of PADS){
+      const inNow = Math.hypot(tip.x - p.px, tip.y - p.py) < p.r;
+      if (inNow && !st.inside[p.id] && speed > 0.35) hit(p, Math.min(speed / 2.5, 1), now);
+      st.inside[p.id] = inNow;
+    }
+    st.x = tip.x; st.y = tip.y; st.t = now;
+  });
+  for (const k in tips) if (!seen[k]) delete tips[k];
+}
+
+/* ---------- Çizim ---------- */
+let prevT = 0;
+function drawVideo(){
+  const vw = cam.videoWidth, vh = cam.videoHeight;
+  if (!vw) { ctx.fillStyle = "#07080c"; ctx.fillRect(0, 0, W, H); return; }
+  const s = Math.max(W / vw, H / vh);
+  ctx.save(); ctx.translate(W, 0); ctx.scale(-1, 1);
+  ctx.drawImage(cam, (W - vw * s) / 2, (H - vh * s) / 2, vw * s, vh * s);
+  ctx.restore();
+  ctx.fillStyle = "rgba(4,5,10,.28)"; ctx.fillRect(0, 0, W, H);
+}
+function drawPads(dt){
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  for (const p of PADS){
+    p.flash = Math.max(0, p.flash - dt * 4);
+    const r = p.r * (1 + p.flash * 0.18);
+    ctx.beginPath(); ctx.arc(p.px, p.py, r, 0, Math.PI * 2);
+    ctx.globalAlpha = 0.16 + p.flash * 0.5; ctx.fillStyle = p.c; ctx.fill();
+    ctx.globalAlpha = 0.9; ctx.lineWidth = 2.5 + p.flash * 4; ctx.strokeStyle = p.c;
+    ctx.shadowColor = p.c; ctx.shadowBlur = 10 + p.flash * 30; ctx.stroke();
+    ctx.shadowBlur = 0; ctx.globalAlpha = 1;
+    ctx.fillStyle = "#fff"; ctx.font = "600 13px -apple-system,Segoe UI,Roboto,sans-serif";
+    ctx.fillText(p.ad, p.px, p.py);
+  }
+}
+function drawHands(){
+  for (const h of handsNow){
+    ctx.lineWidth = 2; ctx.strokeStyle = "#3df58a";
+    ctx.beginPath();
+    for (const [a, b] of BONES){ ctx.moveTo(h[a].x, h[a].y); ctx.lineTo(h[b].x, h[b].y); }
+    ctx.stroke();
+    ctx.fillStyle = "#ff3b4e";
+    for (const p of h){ ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI * 2); ctx.fill(); }
+    const t = h[8];
+    ctx.beginPath(); ctx.arc(t.x, t.y, 11, 0, Math.PI * 2);
+    ctx.strokeStyle = "#fff"; ctx.lineWidth = 2.5; ctx.shadowColor = "#ff4fd8"; ctx.shadowBlur = 18; ctx.stroke();
+    ctx.shadowBlur = 0;
+  }
+  // iki işaret parmağı arasında şimşek teli
+  if (handsNow.length === 2){
+    const a = handsNow[0][8], b = handsNow[1][8];
+    ctx.beginPath(); ctx.moveTo(a.x, a.y);
+    const n = 14, len = Math.hypot(b.x - a.x, b.y - a.y), nx = -(b.y - a.y) / len, ny = (b.x - a.x) / len;
+    for (let i = 1; i < n; i++){
+      const k = i / n, j = (Math.random() - 0.5) * Math.min(26, len * 0.08);
+      ctx.lineTo(a.x + (b.x - a.x) * k + nx * j, a.y + (b.y - a.y) * k + ny * j);
+    }
+    ctx.lineTo(b.x, b.y);
+    ctx.strokeStyle = "rgba(255,160,240,.9)"; ctx.lineWidth = 2;
+    ctx.shadowColor = "#ff4fd8"; ctx.shadowBlur = 16; ctx.stroke(); ctx.shadowBlur = 0;
+  }
+}
+function drawSparks(dt){
+  ctx.globalCompositeOperation = "lighter";
+  for (let i = sparks.length - 1; i >= 0; i--){
+    const s = sparks[i]; s.t += dt;
+    if (s.t >= s.life){ sparks.splice(i, 1); continue; }
+    s.vy += 600 * dt; s.x += s.vx * dt; s.y += s.vy * dt;
+    ctx.globalAlpha = 1 - s.t / s.life; ctx.strokeStyle = s.c; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(s.x - s.vx * 0.03, s.y - s.vy * 0.03); ctx.stroke();
+  }
+  ctx.globalAlpha = 1; ctx.globalCompositeOperation = "source-over";
+}
+function loop(now){
+  const dt = Math.min((now - prevT) / 1000, 0.05); prevT = now;
+  track(now);
+  drawVideo(); drawPads(dt); drawHands(); drawSparks(dt);
+  requestAnimationFrame(loop);
+}
+
+/* ---------- Dokunma (kamerasız da çalsın) ---------- */
+cv.addEventListener("pointerdown", e => {
+  for (const p of PADS) if (Math.hypot(e.clientX - p.px, e.clientY - p.py) < p.r) hit(p, 0.8, performance.now());
+});
+
+/* ---------- Başlat ---------- */
+function say(t, err){ msg.textContent = t; msg.classList.toggle("err", !!err); }
+
+async function start(){
+  startBtn.disabled = true;
+  try { initAudio(); await AC.resume(); } catch(e){}
+
+  let camOk = false;
+  if (!navigator.mediaDevices?.getUserMedia){
+    say("Bu sayfa kameraya erişemiyor (https gerekli). Davullara dokunarak çalabilirsin.", true);
+  } else {
+    try {
+      say("Kamera izni bekleniyor…");
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio:false, video:{ facingMode:"user", width:{ ideal:640 }, height:{ ideal:480 } } });
+      cam.srcObject = stream; await cam.play(); camOk = true;
+    } catch(e){
+      say("Kamera izni verilmedi. Ayarlardan izin verip yeniden dene; şimdilik dokunarak çalabilirsin.", true);
+    }
+  }
+
+  if (camOk){
+    try {
+      say("El takibi yükleniyor…");
+      const { FilesetResolver, HandLandmarker } = await import(`${MP_URL}/vision_bundle.mjs`);
+      const files = await FilesetResolver.forVisionTasks(`${MP_URL}/wasm`);
+      const opts = d => ({ baseOptions:{ modelAssetPath:MODEL, delegate:d }, runningMode:"VIDEO", numHands:2,
+        minHandDetectionConfidence:0.5, minTrackingConfidence:0.5 });
+      try { lm = await HandLandmarker.createFromOptions(files, opts("GPU")); }
+      catch(e){ lm = await HandLandmarker.createFromOptions(files, opts("CPU")); }
+    } catch(e){
+      say("El takibi yüklenemedi (internet gerekli). Dokunarak çalabilirsin.", true);
+      camOk = false;
+    }
+  }
+
+  hud.classList.remove("hidden");
+  if (!lm) stat.textContent = "dokunmatik mod";
+  if (camOk) overlay.classList.add("hidden");
+  else { startBtn.disabled = false; startBtn.textContent = "Dokunarak çal"; startBtn.onclick = () => overlay.classList.add("hidden"); }
+}
+
+window.addEventListener("resize", resize);
+resize(); prevT = performance.now(); requestAnimationFrame(loop);
+startBtn.onclick = start;
+</script>
+</body>
+</html>
