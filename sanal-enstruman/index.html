@@ -100,7 +100,9 @@
       <button class="chip" data-mode="electric">Electric guitar</button>
       <button class="chip" data-mode="bass">Bass guitar</button>
     </div>
-    <div class="sec">Songs</div><div id="songList"></div>
+    <div class="sec">Guitar &amp; bass songs</div><div id="gsongList"></div>
+    <div class="sec">Chord set</div><div class="chips" id="csetChips"></div>
+    <div class="sec">Drum songs</div><div id="songList"></div>
     <div class="sec">Lessons</div><div id="lessonList"></div>
     <div class="sec">Drum kit</div><div class="chips" id="kitChips"></div>
     <div class="sec">Backing beat (free play)</div>
@@ -164,7 +166,7 @@ const overlay = $("overlay"), msg = $("msg"), startBtn = $("start"), hud = $("hu
 const FONT = "-apple-system,Segoe UI,Roboto,sans-serif";
 
 /* ---------- Settings (kept on this device when possible) ---------- */
-const S = { kit:"rock", beat:"off", bpm:100, kick:"pad", autoKick:false, lefty:false, layout:null, drive:false };
+const S = { kit:"rock", beat:"off", bpm:100, kick:"pad", autoKick:false, lefty:false, layout:null, drive:false, cset:"basic" };
 try { Object.assign(S, JSON.parse(localStorage.getItem("airdrums.v2") || "{}")); } catch(e){}
 function save(){ try { localStorage.setItem("airdrums.v2", JSON.stringify(S)); } catch(e){} }
 
@@ -414,7 +416,7 @@ function startChart(def, isLesson, index){
   const auto = !isLesson && S.autoKick;
   for (let b = 0; b < def.bars; b++) for (const [s, id] of def.bar(b)) notes.push({ t:(b * 16 + s) * spb, id, auto:auto && id === "kick" });
   notes.push({ t:def.bars * 16 * spb, id:"crash", auto:false });
-  Object.assign(G, { active:true, def, isLesson, index, notes, spb, score:0, combo:0, best:0, hit:0,
+  Object.assign(G, { active:true, type:"drum", def, isLesson, index, notes, spb, score:0, combo:0, best:0, hit:0,
                      total:notes.filter(n => !n.auto).length, t0:0, endStep:16 + def.bars * 16 + 8 });
   $("stopBtn").classList.remove("hidden");
   banner.textContent = isLesson ? def.text : `${def.title} — get ready`; banner.classList.remove("hidden");
@@ -438,7 +440,7 @@ function playQuiet(id, v, t){
 }
 function songTime(){ return AC.currentTime - G.t0; }
 function judge(id){
-  if (!G.active) return;
+  if (!G.active || G.type !== "drum") return;
   const now = songTime() - LAT; let bestN = null, bestD = 1e9;
   for (const n of G.notes){
     if (n.done || n.auto || n.id !== id) continue;
@@ -453,6 +455,12 @@ function judge(id){
 function updateChart(){
   if (!G.active || !G.t0) return;
   const now = songTime();
+  if (G.type === "gtr"){
+    for (const e of G.notes) if (!e.done && now - LAT - e.t > WIN_G){
+      e.done = true; G.combo = 0; popups.push({ x:GT.x0 + 60, y:GT.strings[0] - 92, text:"Miss", c:"#ff5a5a", t:0 });
+    }
+    return;
+  }
   for (const n of G.notes){
     if (n.done) continue;
     if (n.auto){ if (n.t - now < 0.1){ n.done = true; play("kick", 0.7, G.t0 + n.t); PAD.kick.flash = 0.7; } continue; }
@@ -463,26 +471,88 @@ function finishChart(){
   if (!G.active) return;
   const acc = G.total ? Math.round(G.hit / G.total * 100) : 0;
   G.active = false; $("stopBtn").classList.add("hidden"); banner.classList.add("hidden");
+  if (G.type === "gtr") setChords(SETS[S.cset].list);
   $("resT").textContent = G.isLesson ? (acc >= 70 ? "Lesson passed" : "Keep practising") : G.def.title;
   $("resStars").textContent = "★".repeat(acc >= 90 ? 3 : acc >= 70 ? 2 : acc >= 40 ? 1 : 0).padEnd(3, "☆");
   $("resScore").textContent = G.score; $("resAcc").textContent = acc + "%"; $("resCombo").textContent = G.best;
   $("resNext").classList.toggle("hidden", !(G.isLesson && G.index < LESSONS.length - 1));
   $("result").classList.remove("hidden");
 }
-function stopChart(){ if (!G.active) return; tStop(); G.active = false; $("stopBtn").classList.add("hidden"); banner.classList.add("hidden"); applyBeat(); }
+function stopChart(){ if (!G.active) return; tStop(); G.active = false; if (G.type === "gtr") setChords(SETS[S.cset].list); $("stopBtn").classList.add("hidden"); banner.classList.add("hidden"); applyBeat(); }
+
+/* ---------- Guitar and bass songs: follow the chords, strum on the dots ---------- */
+const GSONGS = [
+  { title:"Campfire",       sub:"84 BPM · G D Em C",       bpm:84,  strum:[0,8],      bars:["G","D","Em","C","G","D","Em","C","G","D","C","G"] },
+  { title:"Open Road",      sub:"100 BPM · Am F C G",      bpm:100, strum:[0,4,8,12], bars:["Am","F","C","G","Am","F","C","G","Am","F","C","G","F","G","Am","Am"] },
+  { title:"Twelve Bar Blues", sub:"92 BPM · A7 D7 E7",     bpm:92,  strum:[0,8,12],   bars:["A7","A7","A7","A7","D7","D7","A7","A7","E7","D7","A7","E7"] },
+  { title:"Anatolian Night", sub:"96 BPM · Am Dm G E",     bpm:96,  strum:[0,6,8],    bars:["Am","Dm","G","E","Am","Dm","G","E","Am","Dm","E","Am"] },
+];
+const WIN_G = 0.3;
+function startGuitarSong(def, index){
+  setMode(isStr() ? mode : "acoustic"); closeAll();
+  const uniq = [...new Set(def.bars)];
+  for (const n of SETS.basic.list) if (uniq.length < 8 && !uniq.includes(n)) uniq.push(n);
+  setChords(uniq.slice(0, 8));
+  const spb = 60 / def.bpm / 4, notes = [];
+  def.bars.forEach((c, b) => def.strum.forEach(st => notes.push({ t:(b * 16 + st) * spb, chord:c })));
+  Object.assign(G, { active:true, type:"gtr", def, isLesson:false, index, notes, spb, score:0, combo:0, best:0, hit:0,
+                     total:notes.length, t0:0, endStep:16 + def.bars.length * 16 + 8 });
+  $("stopBtn").classList.remove("hidden");
+  banner.textContent = `${def.title} — pick the glowing chord, strum on the dots`; banner.classList.remove("hidden");
+  tStart(def.bpm, (step, t, spb) => {
+    if (step === 0) G.t0 = t + 16 * spb;
+    if (step < 16){ if (step % 4 === 0) click(t, step === 0); return; }
+    const s = step - 16, bar = Math.floor(s / 16), q = s % 16;
+    if (s === 0) setTimeout(() => banner.classList.add("hidden"), 400);
+    if (bar < def.bars.length){                                   // the band: drums, plus bass (or guitar if you play bass)
+      const c = CHORD[def.bars[bar]];
+      if (q === 0 || q === 8 || (q === 10 && bar % 2 === 1)) play("kick", 0.2, t);
+      if (q === 4 || q === 12) play("snare", 0.12, t);
+      if (q % 2 === 0) playQuiet("hihat", 0.08, t);
+      if (mode !== "bass"){ if (q === 0 || q === 8) playNote("bass", c.r, 0.5, t); if (q === 6 || q === 14) playNote("bass", c.r + 7, 0.35, t); }
+      else if (q === 0 || q === 8) backStrum(c, t);
+    }
+    if (step >= G.endStep){ tStop(); setTimeout(finishChart, 300); }
+  });
+}
+function strumJudge(){
+  if (!G.active || G.type !== "gtr" || !G.t0) return;
+  const now = songTime() - LAT; let ev = null, bd = 1e9;
+  for (const e of G.notes){ if (e.done) continue; const d = Math.abs(e.t - now); if (d < bd){ bd = d; ev = e; } }
+  if (!ev || bd > WIN_G) return;
+  const px = GT.x0 + 60, py = GT.strings[0] - 92;
+  if (CH[GT.chord].n !== ev.chord){ if (!ev.warn){ ev.warn = 1; popups.push({ x:px, y:py, text:"Wrong chord", c:"#ff8a3d", t:0 }); } return; }
+  if (ev.first === undefined) ev.first = bd;
+  ev.plk = (ev.plk || 0) + 1;
+  if (ev.plk < (mode === "bass" ? 1 : 2)) return;                 // a strum means at least two strings
+  ev.done = ev.hit = true; G.hit++; G.combo++; G.best = Math.max(G.best, G.combo);
+  const perfect = ev.first < 0.12;
+  G.score += (perfect ? 100 : 50) + Math.min(G.combo, 20) * 5;
+  popups.push({ x:px, y:py, text:perfect ? "Perfect" : "Good", c:perfect ? "#3df58a" : "#ffd23d", t:0 });
+}
 
 /* ---------- Guitars and bass ---------- */
-// f = open-chord frets (low E to high e, -1 muted), p = power-chord frets, r = bass root (MIDI), m = minor
-const CH = [
-  { n:"G",  m:0, r:31, f:[3,2,0,0,0,3],   p:[3,5,5,-1,-1,-1] },
-  { n:"C",  m:0, r:36, f:[-1,3,2,0,1,0],  p:[-1,3,5,5,-1,-1] },
-  { n:"D",  m:0, r:38, f:[-1,-1,0,2,3,2], p:[-1,5,7,7,-1,-1] },
-  { n:"Em", m:1, r:28, f:[0,2,2,0,0,0],   p:[0,2,2,-1,-1,-1] },
-  { n:"Am", m:1, r:33, f:[-1,0,2,2,1,0],  p:[-1,0,2,2,-1,-1] },
-  { n:"F",  m:0, r:29, f:[1,3,3,2,1,1],   p:[1,3,3,-1,-1,-1] },
-  { n:"A",  m:0, r:33, f:[-1,0,2,2,2,0],  p:[-1,0,2,2,-1,-1] },
-  { n:"E",  m:0, r:28, f:[0,2,2,1,0,0],   p:[0,2,2,-1,-1,-1] },
-];
+// Chord shapes are real fingerings: frets from the low E string to the high e string, -1 = string not played
+const PC = { C:0, "C#":1, D:2, Eb:3, E:4, F:5, "F#":6, G:7, Ab:8, A:9, Bb:10, B:11 };
+const CHORD = {};
+function defChord(n, f){
+  const m = /^([A-G][#b]?)(.*)$/.exec(n), pc = PC[m[1]], fe = (pc + 8) % 12, fa = (pc + 3) % 12;
+  CHORD[n] = { n, root:m[1], m:/^m(?!aj)/.test(m[2]) ? 1 : 0, f, r:28 + fe,           // r = lowest bass root (MIDI)
+               p: fe <= 4 ? [fe, fe + 2, fe + 2, -1, -1, -1] : [-1, fa, fa + 2, fa + 2, -1, -1] };   // power chord
+}
+[["G",[3,2,0,0,0,3]],["C",[-1,3,2,0,1,0]],["D",[-1,-1,0,2,3,2]],["Em",[0,2,2,0,0,0]],["Am",[-1,0,2,2,1,0]],["F",[1,3,3,2,1,1]],
+ ["A",[-1,0,2,2,2,0]],["E",[0,2,2,1,0,0]],
+ ["G7",[3,2,0,0,0,1]],["C7",[-1,3,2,3,1,0]],["D7",[-1,-1,0,2,1,2]],["E7",[0,2,0,1,0,0]],["A7",[-1,0,2,0,2,0]],["B7",[-1,2,1,2,0,2]],
+ ["Am7",[-1,0,2,0,1,0]],["Em7",[0,2,0,0,0,0]],
+ ["Dm",[-1,-1,0,2,3,1]],["Bm",[-1,2,4,4,3,2]],["F#m",[2,4,4,2,2,2]],["Gm",[3,5,5,3,3,3]],["Bb",[-1,1,3,3,3,1]],
+ ["Cmaj7",[-1,3,2,0,0,0]],["Dm7",[-1,-1,0,2,1,1]],["Fmaj7",[-1,-1,3,2,1,0]]].forEach(([n, f]) => defChord(n, f));
+const SETS = {
+  basic:{ name:"Essentials",  list:["G","C","D","Em","Am","F","A","E"] },
+  sev:  { name:"Sevenths",    list:["G7","C7","D7","E7","A7","B7","Am7","Em7"] },
+  more: { name:"More chords", list:["Dm","Bm","F#m","Gm","Bb","Cmaj7","Dm7","Fmaj7"] },
+};
+if (!SETS[S.cset]) S.cset = "basic";
+let CH = SETS[S.cset].list.map(n => CHORD[n]);
 const INST = {
   acoustic:{ title:"Acoustic Guitar", open:[40,45,50,55,59,64], smp:["ag_lo","ag_mid","ag_b","ag_hi","ag_x"], hint:"Strum across the strings" },
   electric:{ title:"Electric Guitar", open:[40,45,50,55,59,64], smp:["eg_lo","eg_mid","eg_b","eg_hi","eg_x"], hint:"Strum across the strings" },
@@ -496,7 +566,8 @@ function stringNotes(){                               // MIDI note of each strin
   const fr = (mode === "electric" && S.drive) ? c.p : c.f;
   return fr.map((f, i) => f < 0 ? -1 : INST[mode].open[i] + f);
 }
-function chordLabel(c){ return mode === "electric" && S.drive ? c.n.replace("m", "") + "5" : c.n; }
+function chordLabel(c){ return mode === "electric" && S.drive ? c.root + "5" : c.n; }
+function setChords(list){ CH = list.map(n => CHORD[n]); GT.chord = 0; if (AC) damp(); layoutGuitar(); }
 function layoutGuitar(){
   const n = isStr() ? INST[mode].open.length : 6;
   const top = H * 0.15, bh = (H * 0.68) / CH.length, bw = W * 0.24;
@@ -516,29 +587,34 @@ function ksBuffer(midi){                              // plucked-string synthesi
   for (let i = N; i < len; i++) d[i] = decay * 0.5 * (d[i - N] + d[i - N + 1]);
   return ksCache[midi] = buf;
 }
-function pickSample(midi){                            // nearest recorded note; it is re-tuned to the exact pitch
+function pickSample(inst, midi){                      // nearest recorded note; it is re-tuned to the exact pitch
   let best = null, bd = 1e9;
-  for (const id of INST[mode].smp){
+  for (const id of INST[inst].smp){
     if (!noteBuf[id] || !NOTE_F0[id]) continue;
     const d = Math.abs(12 * Math.log2(mtof(midi) / NOTE_F0[id]));
     if (d < bd){ bd = d; best = id; }
   }
   return best;
 }
+function playNote(inst, midi, v, t){
+  const s = AC.createBufferSource(), g = AC.createGain(), id = pickSample(inst, midi); let off = 0;
+  if (id){ s.buffer = noteBuf[id]; s.playbackRate.value = mtof(midi) / NOTE_F0[id]; off = noteLead[id] || 0; }
+  else s.buffer = ksBuffer(midi);
+  g.gain.value = 0.3 + 0.6 * v;
+  s.connect(g); g.connect(inst === "electric" ? elecIn : inst === "bass" ? bassBus : acBus); s.start(t, off);
+  return g;
+}
+function backStrum(c, t){ c.f.forEach((f, i) => { if (f >= 0) playNote("acoustic", INST.acoustic.open[i] + f, 0.15, t + i * 0.012); }); }
 function fadeVoice(g, t, tc){ try { g.gain.cancelScheduledValues(t); g.gain.setTargetAtTime(0.0001, t, tc); } catch(e){} }
 function damp(){ const t = AC ? AC.currentTime : 0; GT.voice.forEach(g => g && fadeVoice(g, t, 0.03)); GT.voice = []; }
 function pluck(si, v){
   if (!AC || !isStr()) return;
   if (AC.state !== "running") AC.resume();
   const midi = stringNotes()[si]; if (midi === undefined || midi < 0) return;
-  const t = AC.currentTime, s = AC.createBufferSource(), g = AC.createGain();
+  const t = AC.currentTime;
   if (GT.voice[si]) fadeVoice(GT.voice[si], t, 0.008);            // a string can only ring one note at a time
-  const id = pickSample(midi); let off = 0;
-  if (id){ s.buffer = noteBuf[id]; s.playbackRate.value = mtof(midi) / NOTE_F0[id]; off = noteLead[id] || 0; }
-  else s.buffer = ksBuffer(midi);
-  g.gain.value = 0.3 + 0.6 * v;
-  s.connect(g); g.connect(mode === "electric" ? elecIn : mode === "bass" ? bassBus : acBus); s.start(t, off);
-  GT.voice[si] = g; GT.vib[si] = 1;
+  GT.voice[si] = playNote(mode, midi, v, t); GT.vib[si] = 1;
+  strumJudge();
 }
 function guitarPoint(key, x, y, prev, speed){
   for (let i = 0; i < GT.boxes.length; i++){
@@ -671,13 +747,36 @@ function drawGuitar(dt){
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
   const notes = stringNotes(), n = GT.strings.length, isBass = mode === "bass";
   const col = mode === "electric" ? (S.drive ? "#ff8a3d" : "#7ab8ff") : isBass ? "#b48cff" : "#3df5c8";
+  const song = G.active && G.type === "gtr" && G.t0, tnow = song ? songTime() : 0;
+  const nextEv = song ? G.notes.find(e => !e.done) : null, need = nextEv ? CH.findIndex(c => c.n === nextEv.chord) : -1;
   GT.boxes.forEach((b, i) => {
     const on = i === GT.chord;
     ctx.beginPath(); ctx.roundRect ? ctx.roundRect(b.x, b.y, b.w, b.h, 12) : ctx.rect(b.x, b.y, b.w, b.h);
     ctx.fillStyle = on ? "rgba(255,79,216,.6)" : "rgba(10,12,20,.45)"; ctx.fill();
     ctx.lineWidth = on ? 3 : 1.5; ctx.strokeStyle = on ? "#ff4fd8" : "rgba(255,255,255,.5)"; ctx.stroke();
     ctx.fillStyle = "#fff"; ctx.font = `700 19px ${FONT}`; ctx.fillText(chordLabel(CH[i]), b.x + b.w / 2, b.y + b.h / 2);
+    if (i === need && !on){                                       // the chord the song wants next
+      const k = 0.5 + 0.5 * Math.sin(performance.now() / 110);
+      ctx.beginPath(); ctx.roundRect ? ctx.roundRect(b.x - 3, b.y - 3, b.w + 6, b.h + 6, 14) : ctx.rect(b.x - 3, b.y - 3, b.w + 6, b.h + 6);
+      ctx.lineWidth = 4; ctx.strokeStyle = `rgba(255,255,255,${0.45 + 0.55 * k})`; ctx.shadowColor = "#fff"; ctx.shadowBlur = 14 * k; ctx.stroke(); ctx.shadowBlur = 0;
+    }
   });
+  if (song){                                                      // timeline: dots travel left to the strum line
+    const ly = GT.strings[0] - 58, xN = GT.x0 + 16, pps = (GT.x1 - xN - 10) / 2.6;
+    ctx.fillStyle = "rgba(10,12,20,.55)"; ctx.fillRect(GT.x0 - 6, ly - 26, GT.x1 - GT.x0 + 12, 46);
+    ctx.strokeStyle = "#fff"; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(xN, ly - 24); ctx.lineTo(xN, ly + 18); ctx.stroke();
+    let last = null;
+    for (const e of G.notes){
+      const x = xN + (e.t - tnow) * pps;
+      if (x > GT.x1 + 10) break;
+      if (x >= xN - 14 && !(e.done && e.hit)){
+        ctx.beginPath(); ctx.arc(x, ly + 6, 8, 0, Math.PI * 2);
+        ctx.fillStyle = e.done ? "rgba(255,90,90,.7)" : "#fff"; ctx.fill();
+        if (e.chord !== last || e === nextEv){ ctx.fillStyle = "#ffd23d"; ctx.font = `800 14px ${FONT}`; ctx.fillText(e.chord, Math.max(x, xN + 14), ly - 13); }
+      }
+      last = e.chord;
+    }
+  }
   // fretboard strip behind the strings
   ctx.fillStyle = "rgba(10,12,20,.35)";
   ctx.fillRect(GT.x0 - 6, GT.strings[0] - 22, GT.x1 - GT.x0 + 12, GT.strings[n - 1] - GT.strings[0] + 44);
@@ -838,9 +937,10 @@ function flash(text){ banner.textContent = text; banner.classList.remove("hidden
   flashTimer = setTimeout(() => { if (!G.active) banner.classList.add("hidden"); }, 2600); }
 function closeAll(){ for (const id of ["sheet", "result"]) $(id).classList.add("hidden"); }
 function setMode(m){
+  if (G.active) stopChart();
   if (isStr()) damp();
   mode = m; $("hudT").textContent = isStr() ? INST[m].title : `Air Drums · ${KITS[S.kit].name}`;
-  if (isStr()){ if (G.active) stopChart(); layoutGuitar(); }
+  if (isStr()) layoutGuitar();
   $("odBtn").classList.toggle("hidden", m !== "electric"); $("odBtn").classList.toggle("on", !!S.drive);
   if (!G.active) applyBeat();
   refreshMenu();
@@ -848,13 +948,15 @@ function setMode(m){
 function refreshMenu(){
   const mark = (sel, attr, val) => document.querySelectorAll(sel).forEach(b => b.classList.toggle("on", b.dataset[attr] === val));
   mark("#modeChips .chip", "mode", mode); mark("#kitChips .chip", "kit", S.kit);
-  mark("#beatChips .chip", "beat", S.beat); mark("#kickChips .chip", "kick", S.kick);
+  mark("#beatChips .chip", "beat", S.beat); mark("#csetChips .chip", "cset", S.cset); mark("#kickChips .chip", "kick", S.kick);
   $("bpm").value = S.bpm; $("bpmV").textContent = `${S.bpm} BPM`;
   $("autoKick").lastElementChild.textContent = S.autoKick ? "On" : "Off";
   $("lefty").lastElementChild.textContent = S.lefty ? "On" : "Off";
 }
 function buildMenu(){
   $("kitChips").innerHTML = Object.entries(KITS).map(([k, v]) => `<button class="chip" data-kit="${k}">${v.name}</button>`).join("");
+  $("gsongList").innerHTML = GSONGS.map((s, i) => `<button class="row" data-gsong="${i}"><span>${s.title}</span><small>${s.sub}</small></button>`).join("");
+  $("csetChips").innerHTML = Object.entries(SETS).map(([k, v]) => `<button class="chip" data-cset="${k}">${v.name}</button>`).join("");
   $("songList").innerHTML = SONGS.map((s, i) => `<button class="row" data-song="${i}"><span>${s.title}</span><small>${s.sub}</small></button>`).join("");
   $("lessonList").innerHTML = LESSONS.map((s, i) => `<button class="row" data-lesson="${i}"><span>${s.title}</span><small>${s.bpm} BPM</small></button>`).join("");
   $("sheet").addEventListener("click", async e => {
@@ -862,6 +964,8 @@ function buildMenu(){
     const b = e.target.closest("button"); if (!b) return;
     const d = b.dataset;
     if (d.mode){ setMode(d.mode); $("sheet").classList.add("hidden"); }
+    else if (d.gsong) startGuitarSong(GSONGS[+d.gsong], +d.gsong);
+    else if (d.cset){ S.cset = d.cset; save(); if (G.active) stopChart(); setChords(SETS[S.cset].list); refreshMenu(); if (!isStr()){ setMode("acoustic"); } $("sheet").classList.add("hidden"); }
     else if (d.song) startChart(SONGS[+d.song], false, +d.song);
     else if (d.lesson) startChart(LESSONS[+d.lesson], true, +d.lesson);
     else if (d.kit){ S.kit = d.kit; save(); setMode(mode); play("snare", 0.6); }
@@ -882,7 +986,7 @@ function buildMenu(){
   $("odBtn").onclick = () => { S.drive = !S.drive; save(); damp(); setDrive(); $("odBtn").classList.toggle("on", S.drive); flash(S.drive ? "Overdrive on: power chords" : "Clean tone: open chords"); };
   $("editDone").onclick = () => { editing = false; dragPad = null; save(); $("editBar").classList.add("hidden"); };
   $("editReset").onclick = () => { S.layout = null; save(); layoutPads(); };
-  $("resRetry").onclick = () => startChart(G.def, G.isLesson, G.index);
+  $("resRetry").onclick = () => G.type === "gtr" ? startGuitarSong(G.def, G.index) : startChart(G.def, G.isLesson, G.index);
   $("resNext").onclick = () => startChart(LESSONS[G.index + 1], true, G.index + 1);
   $("resClose").onclick = () => { $("result").classList.add("hidden"); applyBeat(); };
 }
