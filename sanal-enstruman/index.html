@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>Air Drums</title>
+<title>HandBand</title>
 <style>
   :root{
     --bg:#07080c; --surface:rgba(16,18,26,.94); --surface2:rgba(255,255,255,.07); --line:rgba(255,255,255,.14);
@@ -59,6 +59,11 @@
   .stars{font-size:34px;letter-spacing:6px;color:#ffd23d;margin:6px 0}
   .stat{display:flex;justify-content:space-around;margin:10px 0 6px}
   .stat b{display:block;font-size:22px} .stat span{font-size:12px;color:var(--muted)}
+  .lk::after{content:"PRO";margin-left:8px;font-size:10px;font-weight:800;letter-spacing:.6px;color:#12041a;background:#ffd23d;border-radius:6px;padding:2px 6px}
+  .row.lk::after{margin-left:auto;margin-right:8px;order:2} .row.lk small{order:3}
+  .feat{list-style:none;margin:0 0 14px;padding:0;text-align:left;font-size:15px;line-height:1.9}
+  .feat li::before{content:"✓";color:var(--accent2);font-weight:800;margin-right:10px}
+  .fine{font-size:12px;margin:10px 0 0} .fine a{color:var(--text)}
   #editBar{position:fixed;left:12px;right:12px;bottom:calc(env(safe-area-inset-bottom) + 12px);display:flex;gap:8px}
   #editBar .big{margin:0}
 </style>
@@ -68,7 +73,7 @@
 <canvas id="cv"></canvas>
 
 <div id="hud" class="hidden">
-  <div><div class="t" id="hudT">Air Drums</div><div class="s" id="stat">looking for hands…</div></div>
+  <div><div class="t" id="hudT">HandBand</div><div class="s" id="stat">looking for hands…</div></div>
   <div class="btns">
     <button class="ib hidden" id="stopBtn">Stop</button>
     <button class="ib hidden" id="jamBtn">Jam</button>
@@ -86,8 +91,8 @@
 
 <div id="overlay" class="ovl">
   <div class="card">
-    <h1>Air Drums</h1>
-    <p>Prop your phone up and take a step back. Hit the drums in the air with your index fingers.</p>
+    <h1>HandBand</h1>
+    <p>Play drums, guitar and bass in the air. Prop your phone up, take a step back and play with your hands.</p>
     <button class="big" id="start">Start</button>
     <div id="msg"></div>
   </div>
@@ -130,6 +135,10 @@
     <div class="sec">Layout</div>
     <button class="row" id="editLayout"><span>Move the drums</span><small>Drag to arrange</small></button>
     <button class="row" id="lefty"><span>Left-handed</span><small>Off</small></button>
+    <div class="sec">HandBand</div>
+    <button class="row" id="goPro"><span>HandBand Pro</span><small id="proState">Unlock everything</small></button>
+    <button class="row hidden" id="prevPro"><span>Preview: Pro unlocked</span><small>On</small></button>
+    <p class="fine" style="text-align:center"><a id="lnkPrivacy2" target="_blank" rel="noopener">Privacy Policy</a> · <a id="lnkTerms2" target="_blank" rel="noopener">Terms of Use</a> · v1.0</p>
     <button class="big ghost" id="sheetClose">Close</button>
   </div>
 </div>
@@ -149,6 +158,26 @@
   </div>
 </div>
 
+<div id="pay" class="ovl hidden">
+  <div class="card">
+    <h2>HandBand Pro</h2>
+    <p id="payWhat"></p>
+    <ul class="feat">
+      <li>Electric, lead and bass guitar</li>
+      <li>Electronic and Turkish drum kits</li>
+      <li>Every song, lesson and chord set</li>
+      <li>Hard rock tone and the Jam band</li>
+      <li>No watermark on your videos, no ads</li>
+    </ul>
+    <button class="big" id="payBuy">Unlock Pro</button>
+    <button class="big ghost" id="payAd">Watch an ad to try it now</button>
+    <button class="big ghost" id="payRestore">Restore purchases</button>
+    <button class="big ghost" id="payClose">Not now</button>
+    <p class="fine">One-time purchase, yours forever. <a id="lnkTerms" target="_blank" rel="noopener">Terms of Use</a> · <a id="lnkPrivacy" target="_blank" rel="noopener">Privacy Policy</a></p>
+    <p class="fine" id="payNote"></p>
+  </div>
+</div>
+
 <div id="recSheet" class="ovl hidden">
   <div class="card">
     <h2>Your video is ready</h2>
@@ -160,9 +189,15 @@
 </div>
 
 <script type="module">
+const BUILD = "preview";                          // "preview" = web link for review, "store" = packaged app
 const MP_VER = "0.10.14";
-const MP_URL = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VER}`;
-const MODEL = "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
+const MP_LOCAL = BUILD === "store";                 // the store app ships hand tracking inside the app and works offline
+const MP_URL = MP_LOCAL ? "./mp" : `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VER}`;
+const MP_JS = MP_LOCAL ? "./mp/vision_bundle.js" : `${MP_URL}/vision_bundle.mjs`;
+const MODEL = MP_LOCAL ? "./mp/hand_landmarker.task"
+  : "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
+const PRIVACY_URL = "https://kocamandigital-svg.github.io/sanal-enstruman/privacy.html";
+const TERMS_URL = "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/";
 
 const $ = id => document.getElementById(id);
 const cv = $("cv"), ctx = cv.getContext("2d"), cam = $("cam");
@@ -173,9 +208,33 @@ const FONT = "-apple-system,Segoe UI,Roboto,sans-serif";
 const S = { kit:"rock", beat:"off", bpm:100, kick:"pad", autoKick:false, lefty:false, layout:null, drive:false, cset:"basic", tone:"", easy:true };
 try { Object.assign(S, JSON.parse(localStorage.getItem("airdrums.v2") || "{}")); } catch(e){}
 if (!S.tone) S.tone = S.drive ? "rock" : "clean";
+if (BUILD !== "preview") delete S.previewPro;
 function save(){ try { localStorage.setItem("airdrums.v2", JSON.stringify(S)); } catch(e){} }
 
 let W = 0, H = 0, DPR = 1, mode = "drums", editing = false;
+
+/* ---------- HandBand Pro ---------- */
+// The native app fills this in (store.js). Until it does, nothing can be bought and nothing unlocks for free.
+const Store = window.HBStore || { ready:false, price:"", adsReady:false,
+  async buy(){ return false; }, async restore(){ return false; }, async rewarded(){ return false; }, interstitial(){} };
+const FREE = new Set(["mode:drums","mode:acoustic","kit:rock","song:0","gsong:0","lesson:0","lesson:1","cset:basic"]);
+const sessionUnlock = {};
+function isPro(){ return BUILD === "preview" ? S.previewPro !== false : !!S.pro; }
+function locked(key){ return !FREE.has(key) && !isPro() && !sessionUnlock[key]; }
+function keyOf(b){ for (const k of ["mode","kit","song","gsong","lesson","cset"]) if (b.dataset[k] !== undefined) return `${k}:${b.dataset[k]}`; return ""; }
+let payKey = "";
+function openPaywall(key, label){
+  payKey = key || "";
+  $("payWhat").textContent = label ? `${label} is part of HandBand Pro.` : "Unlock every instrument, kit and song.";
+  $("payBuy").textContent = Store.ready && Store.price ? `Unlock Pro — ${Store.price}` : "Unlock Pro";
+  $("payBuy").disabled = !Store.ready;
+  $("payAd").classList.toggle("hidden", !(Store.adsReady && payKey));
+  $("payRestore").classList.toggle("hidden", !Store.ready);
+  $("payNote").textContent = BUILD === "preview" ? "Preview build: purchases are switched off. Use Menu → Preview: Pro unlocked to try everything."
+    : Store.ready ? "" : "The store is not available right now. Please try again later.";
+  $("sheet").classList.add("hidden"); $("pay").classList.remove("hidden");
+}
+function proChanged(){ if (!isPro()){ if (locked("kit:" + S.kit)) S.kit = "rock"; if (locked("cset:" + S.cset)) S.cset = "basic"; } save(); }
 function resize(){
   DPR = Math.min(window.devicePixelRatio || 1, 2);
   W = window.innerWidth; H = window.innerHeight;
@@ -500,6 +559,7 @@ function finishChart(){
   $("resScore").textContent = G.score; $("resAcc").textContent = acc + "%"; $("resCombo").textContent = G.best;
   $("resNext").classList.toggle("hidden", !(G.isLesson && G.index < LESSONS.length - 1));
   $("result").classList.remove("hidden");
+  if (!isPro()) Store.interstitial();
 }
 function jamUi(){ $("jamBtn").classList.toggle("hidden", !(mode === "electric" || mode === "lead" || mode === "bass")); }
 function stopChart(){ if (!G.active) return; tStop(); G.active = false; jamUi(); if (G.type === "gtr") setChords(SETS[S.cset].list); $("stopBtn").classList.add("hidden"); banner.classList.add("hidden"); applyBeat(); }
@@ -978,6 +1038,11 @@ function loop(now){
   drawVideo();
   if (isStr()) drawGuitar(dt); else drawPads(dt);
   drawHands(); drawFx(dt);
+  if (rec && !isPro()){                                           // free videos carry the app name
+    ctx.textAlign = "right"; ctx.textBaseline = "alphabetic"; ctx.font = `800 17px ${FONT}`;
+    ctx.shadowColor = "#000"; ctx.shadowBlur = 6; ctx.fillStyle = "rgba(255,255,255,.92)";
+    ctx.fillText("HandBand", W - 14, H - 18); ctx.shadowBlur = 0;
+  }
   requestAnimationFrame(loop);
 }
 
@@ -1049,13 +1114,13 @@ function startRec(){
     recBlob = new Blob(recChunks, { type:mime.split(";")[0] });
     if (recUrl) URL.revokeObjectURL(recUrl);
     recUrl = URL.createObjectURL(recBlob);
-    const ext = mime.startsWith("video/mp4") ? "mp4" : "webm", name = `air-drums-${Date.now()}.${ext}`;
+    const ext = mime.startsWith("video/mp4") ? "mp4" : "webm", name = `handband-${Date.now()}.${ext}`;
     $("recSave").href = recUrl; $("recSave").download = name;
     $("recInfo").textContent = `${(recBlob.size / 1048576).toFixed(1)} MB · ${ext.toUpperCase()}`;
     const file = new File([recBlob], name, { type:recBlob.type });
     const canShare = navigator.canShare && navigator.canShare({ files:[file] });
     $("recShare").classList.toggle("hidden", !canShare);
-    $("recShare").onclick = async () => { try { await navigator.share({ files:[file], title:"Air Drums" }); } catch(e){} };
+    $("recShare").onclick = async () => { try { await navigator.share({ files:[file], title:"HandBand" }); } catch(e){} };
     $("recSheet").classList.remove("hidden");
   };
   rec.start(500); $("recBtn").classList.add("on"); $("recBtn").textContent = "■";
@@ -1073,7 +1138,7 @@ function closeAll(){ for (const id of ["sheet", "result"]) $(id).classList.add("
 function setMode(m){
   if (G.active) stopChart();
   if (isStr()) damp();
-  mode = m; $("hudT").textContent = isStr() ? INST[m].title : `Air Drums · ${KITS[S.kit].name}`;
+  mode = m; $("hudT").textContent = isStr() ? INST[m].title : `Drums · ${KITS[S.kit].name}`;
   if (isStr()) layoutGuitar();
   if (J.on && !(m === "electric" || m === "lead" || m === "bass")) stopJam();
   $("jamBtn").classList.toggle("hidden", !(m === "electric" || m === "lead" || m === "bass"));
@@ -1091,6 +1156,10 @@ function refreshMenu(){
   $("autoKick").lastElementChild.textContent = S.autoKick ? "On" : "Off";
   $("lefty").lastElementChild.textContent = S.lefty ? "On" : "Off";
   $("easy").lastElementChild.textContent = S.easy ? "On" : "Off";
+  document.querySelectorAll("#sheet [data-mode],#sheet [data-kit],#sheet [data-song],#sheet [data-gsong],#sheet [data-lesson],#sheet [data-cset]")
+    .forEach(b => b.classList.toggle("lk", locked(keyOf(b))));
+  $("proState").textContent = isPro() ? "Unlocked" : "Unlock everything";
+  $("prevPro").classList.toggle("hidden", BUILD !== "preview"); $("prevPro").lastElementChild.textContent = S.previewPro === false ? "Off" : "On";
 }
 function buildMenu(){
   $("kitChips").innerHTML = Object.entries(KITS).map(([k, v]) => `<button class="chip" data-kit="${k}">${v.name}</button>`).join("");
@@ -1101,7 +1170,10 @@ function buildMenu(){
   $("sheet").addEventListener("click", async e => {
     if (e.target === $("sheet")){ $("sheet").classList.add("hidden"); return; }
     const b = e.target.closest("button"); if (!b) return;
-    const d = b.dataset;
+    const d = b.dataset, key = keyOf(b);
+    if (key && locked(key)){ openPaywall(key, (b.querySelector("span") || b).textContent.trim()); return; }
+    if (b.id === "goPro"){ if (isPro()) flash("HandBand Pro is unlocked. Thank you!"); else openPaywall("", ""); return; }
+    if (b.id === "prevPro"){ S.previewPro = S.previewPro === false; proChanged(); setChords(SETS[S.cset].list); setMode(locked("mode:" + mode) ? "drums" : mode); return; }
     if (d.mode){ setMode(d.mode); $("sheet").classList.add("hidden"); }
     else if (d.gsong) startGuitarSong(GSONGS[+d.gsong], +d.gsong);
     else if (d.cset){ S.cset = d.cset; save(); if (G.active) stopChart(); setChords(SETS[S.cset].list); refreshMenu(); if (!isStr()){ setMode("acoustic"); } $("sheet").classList.add("hidden"); }
@@ -1121,6 +1193,15 @@ function buildMenu(){
   });
   $("bpm").addEventListener("input", e => { S.bpm = +e.target.value; $("bpmV").textContent = `${S.bpm} BPM`; });
   $("bpm").addEventListener("change", () => { save(); applyBeat(); });
+  for (const [id, url] of [["lnkTerms", TERMS_URL], ["lnkTerms2", TERMS_URL], ["lnkPrivacy", PRIVACY_URL], ["lnkPrivacy2", PRIVACY_URL]]) $(id).href = url;
+  window.addEventListener("hb-pro", () => { S.pro = true; proChanged(); refreshMenu(); $("pay").classList.add("hidden"); });   // the store says Pro is owned
+  if (Store.owned){ S.pro = true; }
+  $("payClose").onclick = () => $("pay").classList.add("hidden");
+  $("payBuy").onclick = async () => { $("payBuy").disabled = true; const ok = await Store.buy(); $("payBuy").disabled = !Store.ready;
+    if (ok){ S.pro = true; proChanged(); $("pay").classList.add("hidden"); refreshMenu(); flash("HandBand Pro unlocked. Enjoy!"); } };
+  $("payRestore").onclick = async () => { const ok = await Store.restore();
+    if (ok){ S.pro = true; proChanged(); $("pay").classList.add("hidden"); refreshMenu(); flash("Purchase restored."); } else $("payNote").textContent = "No earlier purchase was found for this account."; };
+  $("payAd").onclick = async () => { if (payKey && await Store.rewarded()){ sessionUnlock[payKey] = true; $("pay").classList.add("hidden"); refreshMenu(); $("sheet").classList.remove("hidden"); flash("Unlocked for this session."); } };
   $("menuBtn").onclick = () => { refreshMenu(); $("sheet").classList.remove("hidden"); };
   $("stopBtn").onclick = stopChart;
   $("odBtn").onclick = () => {
@@ -1137,8 +1218,11 @@ function buildMenu(){
 
 /* ---------- Start ---------- */
 function say(t, err){ msg.textContent = t; msg.classList.toggle("err", !!err); }
+let wake = null;
+async function keepAwake(){ try { if (navigator.wakeLock && !wake){ wake = await navigator.wakeLock.request("screen"); wake.addEventListener("release", () => { wake = null; }); } } catch(e){} }
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && AC) keepAwake(); });
 async function start(){
-  startBtn.disabled = true;
+  startBtn.disabled = true; keepAwake();
   try { initAudio(); await AC.resume(); loadSamples(); } catch(e){}
   let camOk = false;
   if (!navigator.mediaDevices?.getUserMedia){
@@ -1153,14 +1237,15 @@ async function start(){
   if (camOk){
     try {
       say("Loading hand tracking…");
-      const { FilesetResolver, HandLandmarker } = await import(`${MP_URL}/vision_bundle.mjs`);
+      const { FilesetResolver, HandLandmarker } = await import(MP_JS);
       const files = await FilesetResolver.forVisionTasks(`${MP_URL}/wasm`);
       const opts = d => ({ baseOptions:{ modelAssetPath:MODEL, delegate:d }, runningMode:"VIDEO", numHands:2,
         minHandDetectionConfidence:0.5, minTrackingConfidence:0.5 });
       try { lm = await HandLandmarker.createFromOptions(files, opts("GPU")); }
       catch(e){ lm = await HandLandmarker.createFromOptions(files, opts("CPU")); }
-    } catch(e){ say("Hand tracking could not load (internet is required). You can still tap the drums.", true); camOk = false; }
+    } catch(e){ say(MP_LOCAL ? "Hand tracking could not start on this device. You can still play by touch." : "Hand tracking could not load (internet is required). You can still tap the drums.", true); camOk = false; }
   }
+  proChanged(); setChords(SETS[S.cset].list);
   hud.classList.remove("hidden"); setMode("drums");
   if (S.kick === "shake") enableMotion().then(ok => { if (!ok){ S.kick = "pad"; refreshMenu(); } });
   if (!lm) stat.textContent = "touch mode";
