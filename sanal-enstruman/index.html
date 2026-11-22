@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="tr">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>Hava Bateri</title>
+<title>Air Drums</title>
 <style>
   :root{
     --bg:#07080c; --surface:rgba(16,18,26,.82); --line:rgba(255,255,255,.14);
@@ -37,13 +37,13 @@
 <body>
 <video id="cam" playsinline muted autoplay></video>
 <canvas id="cv"></canvas>
-<div id="hud" class="hidden"><span>Hava Bateri</span><span id="stat">el aranıyor…</span></div>
+<div id="hud" class="hidden"><span>Air Drums</span><span id="stat">looking for hands…</span></div>
 
 <div id="overlay">
   <div class="card">
-    <h1>Hava Bateri</h1>
-    <p>Telefonu karşına koy, bir adım geri çekil. İşaret parmağınla ekrandaki davullara havada vur.</p>
-    <button id="start">Başla</button>
+    <h1>Air Drums</h1>
+    <p>Prop your phone up and take a step back. Hit the drums in the air with your index fingers.</p>
+    <button id="start">Start</button>
     <div id="msg"></div>
   </div>
 </div>
@@ -68,16 +68,18 @@ function resize(){
 
 /* ---------- Davullar ---------- */
 const PADS = [
-  { id:"crash", ad:"Zil",     x:.20, y:.20, c:"#ffd23d" },
-  { id:"tom1",  ad:"Tom",     x:.80, y:.20, c:"#3df5c8" },
-  { id:"hihat", ad:"Hi-Hat",  x:.16, y:.44, c:"#7ab8ff" },
-  { id:"tom2",  ad:"Alt Tom", x:.84, y:.44, c:"#b48cff" },
-  { id:"snare", ad:"Trampet", x:.27, y:.68, c:"#ff4fd8" },
-  { id:"floor", ad:"Floor",   x:.73, y:.68, c:"#ff8a3d" },
-  { id:"kick",  ad:"Kick",    x:.50, y:.87, c:"#ff5a5a" },
+  { id:"crash",   ad:"Crash",    x:.17, y:.15, c:"#ffd23d" },
+  { id:"ride",    ad:"Ride",     x:.83, y:.15, c:"#ffe9a3" },
+  { id:"openhat", ad:"Open Hat", x:.13, y:.36, c:"#9fd0ff" },
+  { id:"tom1",    ad:"High Tom", x:.87, y:.36, c:"#3df5c8" },
+  { id:"hihat",   ad:"Hi-Hat",   x:.15, y:.57, c:"#7ab8ff" },
+  { id:"tom2",    ad:"Mid Tom",  x:.85, y:.57, c:"#b48cff" },
+  { id:"snare",   ad:"Snare",    x:.25, y:.78, c:"#ff4fd8" },
+  { id:"floor",   ad:"Floor Tom",x:.75, y:.78, c:"#ff8a3d" },
+  { id:"kick",    ad:"Kick",     x:.50, y:.89, c:"#ff5a5a" },
 ];
 function layoutPads(){
-  const r = Math.max(40, Math.min(W, H) * 0.125);
+  const r = Math.max(38, Math.min(W * 0.125, H * 0.085));
   for (const p of PADS){ p.px = p.x * W; p.py = p.y * H; p.r = r; p.flash = p.flash || 0; p.last = p.last || 0; }
 }
 
@@ -109,18 +111,64 @@ function noise(dur, v, type, freq, q = 0.8){
   s.buffer = noiseBuf; f.type = type; f.frequency.value = freq; f.Q.value = q;
   s.connect(f); f.connect(env(v, t, dur)); s.start(t, Math.random()); s.stop(t + dur + 0.02);
 }
+// metallic partials for cymbals / hats
+const METAL = [2, 3, 4.16, 5.43, 6.79, 8.21];
+function metal(dur, v, base, hp, bp){
+  const t = AC.currentTime, g = env(v, t, dur);
+  const f1 = AC.createBiquadFilter(); f1.type = "bandpass"; f1.frequency.value = bp; f1.Q.value = 0.6;
+  const f2 = AC.createBiquadFilter(); f2.type = "highpass"; f2.frequency.value = hp;
+  f1.connect(f2); f2.connect(g);
+  for (const r of METAL){
+    const o = AC.createOscillator(); o.type = "square"; o.frequency.value = base * r;
+    o.connect(f1); o.start(t); o.stop(t + dur + 0.02);
+  }
+  return g;
+}
+// real recordings: drop sounds/<id>.mp3 next to this page and they replace the synth
+const samples = {};
+async function loadSamples(){
+  await Promise.all(PADS.map(async p => {
+    try {
+      const r = await fetch(`sounds/${p.id}.mp3`);
+      if (!r.ok) return;
+      samples[p.id] = await AC.decodeAudioData(await r.arrayBuffer());
+    } catch(e){}
+  }));
+}
+let openHatGain = null;
+function choke(){
+  if (!openHatGain) return;
+  const t = AC.currentTime;
+  try { openHatGain.gain.cancelScheduledValues(t); openHatGain.gain.setTargetAtTime(0.0001, t, 0.015); } catch(e){}
+  openHatGain = null;
+}
 function play(id, v){
   if (!AC) return;
   if (AC.state !== "running") AC.resume();
   v = 0.35 + 0.65 * v;
+  if (id === "hihat") choke();
+  if (samples[id]){
+    const t = AC.currentTime, s = AC.createBufferSource(), g = AC.createGain();
+    s.buffer = samples[id]; g.gain.value = v; s.connect(g); g.connect(master); s.start(t);
+    if (id === "openhat") openHatGain = g;
+    return;
+  }
   switch (id){
-    case "kick":  tone(150, 42, 0.38, 1.0 * v); noise(0.03, 0.3 * v, "lowpass", 1200); break;
-    case "snare": noise(0.2, 0.8 * v, "highpass", 1400); tone(210, 140, 0.12, 0.5 * v, "triangle"); break;
-    case "hihat": noise(0.06, 0.5 * v, "highpass", 8000); break;
-    case "crash": noise(1.3, 0.55 * v, "highpass", 4500); noise(0.5, 0.3 * v, "bandpass", 9000, 2); break;
-    case "tom1":  tone(260, 150, 0.32, 0.9 * v); break;
-    case "tom2":  tone(190, 105, 0.38, 0.9 * v); break;
-    case "floor": tone(130, 68, 0.48, 0.95 * v); break;
+    case "kick":
+      tone(165, 44, 0.42, 1.0 * v); tone(80, 40, 0.3, 0.5 * v, "triangle");
+      noise(0.02, 0.35 * v, "lowpass", 2500); break;
+    case "snare":
+      noise(0.22, 0.7 * v, "highpass", 1800); noise(0.12, 0.45 * v, "bandpass", 3500, 1.2);
+      tone(190, 150, 0.14, 0.45 * v, "triangle"); tone(335, 280, 0.09, 0.25 * v); break;
+    case "hihat":   metal(0.07, 0.5 * v, 40, 7000, 10000); break;
+    case "openhat": openHatGain = metal(0.55, 0.45 * v, 40, 6500, 10000); break;
+    case "crash":
+      metal(1.6, 0.4 * v, 34, 3500, 7000); noise(1.2, 0.35 * v, "highpass", 5000); break;
+    case "ride":
+      metal(1.1, 0.3 * v, 47, 4500, 6500); tone(880, 870, 0.5, 0.12 * v); noise(0.03, 0.2 * v, "highpass", 8000); break;
+    case "tom1":  tone(280, 165, 0.3, 0.9 * v);  noise(0.02, 0.2 * v, "bandpass", 1800); break;
+    case "tom2":  tone(205, 115, 0.36, 0.9 * v); noise(0.02, 0.2 * v, "bandpass", 1400); break;
+    case "floor": tone(135, 70, 0.5, 0.95 * v);  noise(0.02, 0.2 * v, "bandpass", 1000); break;
   }
 }
 
@@ -160,7 +208,7 @@ function track(now){
   let res;
   try { res = lm.detectForVideo(cam, now); } catch(e){ return; }
   handsNow = (res.landmarks || []).map(h => h.map(mapPt));
-  stat.innerHTML = handsNow.length ? `<b>${handsNow.length}</b> el` : "el aranıyor…";
+  stat.innerHTML = handsNow.length ? `<b>${handsNow.length}</b> ${handsNow.length > 1 ? "hands" : "hand"}` : "looking for hands…";
 
   const seen = {};
   handsNow.forEach((h, i) => {
@@ -200,7 +248,7 @@ function drawPads(dt){
     ctx.globalAlpha = 0.9; ctx.lineWidth = 2.5 + p.flash * 4; ctx.strokeStyle = p.c;
     ctx.shadowColor = p.c; ctx.shadowBlur = 10 + p.flash * 30; ctx.stroke();
     ctx.shadowBlur = 0; ctx.globalAlpha = 1;
-    ctx.fillStyle = "#fff"; ctx.font = "600 13px -apple-system,Segoe UI,Roboto,sans-serif";
+    ctx.fillStyle = "#fff"; ctx.font = "600 12px -apple-system,Segoe UI,Roboto,sans-serif";
     ctx.fillText(p.ad, p.px, p.py);
   }
 }
@@ -259,25 +307,25 @@ function say(t, err){ msg.textContent = t; msg.classList.toggle("err", !!err); }
 
 async function start(){
   startBtn.disabled = true;
-  try { initAudio(); await AC.resume(); } catch(e){}
+  try { initAudio(); await AC.resume(); loadSamples(); } catch(e){}
 
   let camOk = false;
   if (!navigator.mediaDevices?.getUserMedia){
-    say("Bu sayfa kameraya erişemiyor (https gerekli). Davullara dokunarak çalabilirsin.", true);
+    say("This page cannot reach the camera (https is required). You can still tap the drums.", true);
   } else {
     try {
-      say("Kamera izni bekleniyor…");
+      say("Waiting for camera permission…");
       const stream = await navigator.mediaDevices.getUserMedia({
         audio:false, video:{ facingMode:"user", width:{ ideal:640 }, height:{ ideal:480 } } });
       cam.srcObject = stream; await cam.play(); camOk = true;
     } catch(e){
-      say("Kamera izni verilmedi. Ayarlardan izin verip yeniden dene; şimdilik dokunarak çalabilirsin.", true);
+      say("Camera permission was denied. Allow it in settings and try again; for now you can tap the drums.", true);
     }
   }
 
   if (camOk){
     try {
-      say("El takibi yükleniyor…");
+      say("Loading hand tracking…");
       const { FilesetResolver, HandLandmarker } = await import(`${MP_URL}/vision_bundle.mjs`);
       const files = await FilesetResolver.forVisionTasks(`${MP_URL}/wasm`);
       const opts = d => ({ baseOptions:{ modelAssetPath:MODEL, delegate:d }, runningMode:"VIDEO", numHands:2,
@@ -285,15 +333,15 @@ async function start(){
       try { lm = await HandLandmarker.createFromOptions(files, opts("GPU")); }
       catch(e){ lm = await HandLandmarker.createFromOptions(files, opts("CPU")); }
     } catch(e){
-      say("El takibi yüklenemedi (internet gerekli). Dokunarak çalabilirsin.", true);
+      say("Hand tracking could not load (internet is required). You can still tap the drums.", true);
       camOk = false;
     }
   }
 
   hud.classList.remove("hidden");
-  if (!lm) stat.textContent = "dokunmatik mod";
+  if (!lm) stat.textContent = "touch mode";
   if (camOk) overlay.classList.add("hidden");
-  else { startBtn.disabled = false; startBtn.textContent = "Dokunarak çal"; startBtn.onclick = () => overlay.classList.add("hidden"); }
+  else { startBtn.disabled = false; startBtn.textContent = "Play by touch"; startBtn.onclick = () => overlay.classList.add("hidden"); }
 }
 
 window.addEventListener("resize", resize);
