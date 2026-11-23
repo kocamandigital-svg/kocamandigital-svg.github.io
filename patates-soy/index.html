@@ -57,6 +57,18 @@ h1 span{color:#ff8a1f}
 #score{font-size:58px;font-weight:800;line-height:1;color:#f2d98a}
 #grade{font-size:24px;font-weight:800;color:#ff8a1f}
 #stars{font-size:38px;letter-spacing:6px;color:#ffc83a;line-height:1}
+#coin{font-size:18px;font-weight:800;color:#ffc83a}
+.shop{display:grid;gap:10px;width:min(460px,100%)}
+.card{background:#141414;border:2px solid #2a2a2a;border-radius:16px;padding:12px 14px;text-align:left;display:grid;gap:6px}
+.card.on{border-color:#6fd86a}
+.card h3{font-size:19px;line-height:1.1;display:flex;justify-content:space-between;gap:8px}
+.card h3 em{font-style:normal;font-size:14px;color:#6fd86a}
+.card p{font-size:14px;opacity:.75;line-height:1.3}
+.card .row{display:flex;gap:8px;flex-wrap:wrap}
+.card button{flex:1 1 120px;min-height:44px;border:0;border-radius:12px;font:inherit;font-size:15px;font-weight:800;cursor:pointer;background:#ff8a1f;color:#1a0d00}
+.card button.alt{background:#262626;color:#f6efe0}
+.card button:disabled{opacity:.4}
+#shopMsg{font-size:14px;color:#ffc83a;min-height:20px;max-width:440px}
 #quit{position:fixed;top:max(10px,env(safe-area-inset-top));left:max(10px,env(safe-area-inset-left));z-index:8;width:44px;height:44px;border-radius:12px;border:0;background:#1d1d1d;color:#f6efe0;font-size:22px;cursor:pointer}
 </style>
 </head>
@@ -86,7 +98,16 @@ h1 span{color:#ff8a1f}
   </div>
   <button class="btn" id="bCam">Kamerayla oyna</button>
   <button class="btn alt" id="bTouch">Dokunarak oyna</button>
+  <button class="btn alt" id="bShop">Alet dükkanı · <span class="cv2"></span> altın</button>
   <p class="note" id="note"></p>
+</div>
+
+<div id="shop" class="ov hide">
+  <h1 style="font-size:40px">Alet <span>dükkanı</span></h1>
+  <div id="coin"></div>
+  <div class="shop" id="shopList"></div>
+  <div id="shopMsg"></div>
+  <button class="btn alt" id="bShopBack">Geri</button>
 </div>
 
 <div id="result" class="ov hide">
@@ -99,6 +120,7 @@ h1 span{color:#ff8a1f}
     <div>Derin kesik <b id="rG">0</b></div>
     <div>Süre bonusu <b id="rT">0</b></div>
     <div>Rekor (<span id="rN"></span>) <b id="rB">0</b></div>
+    <div>Kazanılan altın <b id="rA">0</b></div>
   </div>
   <button class="btn" id="bAgain">Tekrar</button>
   <button class="btn alt" id="bNext">Sonraki sebze</button>
@@ -252,32 +274,46 @@ function woodTex(){const c=mkCv(512,128),x=c.getContext('2d');x.fillStyle='#4a2a
   for(let i=0;i<70;i++){x.strokeStyle=Math.random()<.5?'#2e170a':'#6b3d1f';x.globalAlpha=rnd(.2,.6);x.lineWidth=rnd(1,4);x.beginPath();const y=rnd(0,128);x.moveTo(0,y);
     for(let k=1;k<=8;k++)x.lineTo(k*64,y+Math.sin(k+i)*rnd(2,8));x.stroke();}
   const t=new THREE.CanvasTexture(c);t.encoding=THREE.sRGBEncoding;return t;}
-function makeKnife(){
+function damTex(){const c=mkCv(512,128),x=c.getContext('2d');x.fillStyle='#b8c0c8';x.fillRect(0,0,512,128);for(let i=0;i<46;i++){x.strokeStyle=i%2?'#8a939c':'#e2e7ec';x.globalAlpha=.55;x.lineWidth=rnd(1.5,3.5);x.beginPath();const y=i*3-10;x.moveTo(0,y);for(let k=1;k<=16;k++)x.lineTo(k*32,y+Math.sin(k*.8+i*.3)*9);x.stroke();}const t=new THREE.CanvasTexture(c);t.encoding=THREE.sRGBEncoding;return t;}
+function makeKnife(o={}){
   const g=new THREE.Group();
-  const steel=new THREE.MeshStandardMaterial({color:0xe6eaee,metalness:1,roughness:.2,envMapIntensity:1.4});
+  const steel=new THREE.MeshStandardMaterial({color:o.steel||0xe6eaee,map:o.dam?damTex():null,metalness:1,roughness:o.dam?.28:.2,envMapIntensity:1.4});
   const sh=new THREE.Shape();sh.moveTo(0,0);sh.quadraticCurveTo(0.55,-0.21,1.15,-0.18);sh.lineTo(1.15,0.05);sh.lineTo(0.18,0.045);sh.quadraticCurveTo(0.06,0.03,0,0);
-  const blade=new THREE.Mesh(new THREE.ExtrudeGeometry(sh,{depth:0.012,bevelEnabled:true,bevelThickness:0.006,bevelSize:0.008,bevelSegments:3,curveSegments:24}),steel);blade.position.z=-0.006;g.add(blade);
+  const blade=new THREE.Mesh(new THREE.ExtrudeGeometry(sh,{depth:0.012,bevelEnabled:true,bevelThickness:0.006,bevelSize:0.008,bevelSegments:3,curveSegments:24}),steel);blade.position.z=-0.006;blade.scale.y=o.tall||1;g.add(blade);
   const bol=new THREE.Mesh(new THREE.CylinderGeometry(0.075,0.09,0.08,20),steel);bol.rotation.z=Math.PI/2;bol.scale.set(1,1,0.7);bol.position.set(1.19,-0.065,0);g.add(bol);
-  const wood=new THREE.MeshStandardMaterial({map:woodTex(),roughness:.5,metalness:0});
+  const wood=o.handle?new THREE.MeshStandardMaterial({color:o.handle,roughness:.5,metalness:0,envMapIntensity:.3}):new THREE.MeshStandardMaterial({map:woodTex(),roughness:.5,metalness:0});
   const h=new THREE.Mesh(new THREE.CylinderGeometry(0.088,0.078,0.86,24),wood);h.rotation.z=Math.PI/2;h.scale.set(1,1,0.62);h.position.set(1.66,-0.065,0);g.add(h);
   const brass=new THREE.MeshStandardMaterial({color:0xd9b56a,metalness:1,roughness:.28});
   for(const x of[1.44,1.66,1.88]){const r=new THREE.Mesh(new THREE.CylinderGeometry(0.02,0.02,0.115,12),brass);r.rotation.x=Math.PI/2;r.position.set(x,-0.065,0);g.add(r);}
   const cap=new THREE.Mesh(new THREE.SphereGeometry(0.08,16,10),steel);cap.scale.set(0.5,1,0.62);cap.position.set(2.09,-0.065,0);g.add(cap);
-  g.userData={len:2.1,center:1.0,hc:1.32,hlen:0.85,cut:0.3,brush:0.105,gougeSpeed:2.4,mult:1.2,name:'Bıçak'};return g;
+  g.userData=Object.assign({len:2.1,center:1.0,hc:1.32,hlen:0.85,cut:0.3,brush:0.105,gougeSpeed:2.4,deepTol:1.35,over:1,mult:1.2,name:'Bıçak'},o.ud);return g;
 }
-function makePeeler(){
-  const g=new THREE.Group();const steel=new THREE.MeshStandardMaterial({color:0xdde2e6,metalness:1,roughness:.22,envMapIntensity:1.3});
+function makePeeler(o={}){
+  const g=new THREE.Group();const steel=new THREE.MeshStandardMaterial({color:o.steel||0xdde2e6,metalness:1,roughness:.22,envMapIntensity:1.3});
   const bl=new THREE.Mesh(new THREE.BoxGeometry(0.05,0.42,0.016),steel);g.add(bl);
   const slot=new THREE.Mesh(new THREE.BoxGeometry(0.012,0.3,0.02),new THREE.MeshStandardMaterial({color:0x222222,roughness:.6}));slot.position.x=-0.008;g.add(slot);
   for(const s of[-1,1]){const pr=new THREE.Mesh(new THREE.CylinderGeometry(0.018,0.018,0.42,10),steel);pr.rotation.z=Math.PI/2+s*0.45;pr.position.set(0.19,s*0.12,0);g.add(pr);}
-  const rub=new THREE.MeshStandardMaterial({color:0xd84400,roughness:.7,envMapIntensity:.35});
+  const rub=new THREE.MeshStandardMaterial({color:o.rub||0xd84400,roughness:.7,envMapIntensity:.35});
   const h=new THREE.Mesh(new THREE.CylinderGeometry(0.075,0.09,0.95,24),rub);h.rotation.z=Math.PI/2;h.scale.set(1,1,0.72);h.position.set(0.85,0,0);g.add(h);
-  for(let i=0;i<5;i++){const r=new THREE.Mesh(new THREE.TorusGeometry(0.085,0.012,8,24),new THREE.MeshStandardMaterial({color:0xa83a00,roughness:.7}));r.rotation.y=Math.PI/2;r.scale.set(1,0.72,1);r.position.set(0.55+i*0.12,0,0);g.add(r);}
+  for(let i=0;i<5;i++){const r=new THREE.Mesh(new THREE.TorusGeometry(0.085,0.012,8,24),new THREE.MeshStandardMaterial({color:o.ring||0xa83a00,roughness:.7}));r.rotation.y=Math.PI/2;r.scale.set(1,0.72,1);r.position.set(0.55+i*0.12,0,0);g.add(r);}
   const ring=new THREE.Mesh(new THREE.TorusGeometry(0.04,0.012,8,20),steel);ring.position.set(1.36,0,0);g.add(ring);
-  g.userData={len:1.42,center:0.75,hc:0.55,hlen:0.95,cut:0.0,brush:0.15,gougeSpeed:3.2,mult:1.0,name:'Soyacak'};return g;
+  g.userData=Object.assign({len:1.42,center:0.75,hc:0.55,hlen:0.95,cut:0.0,brush:0.15,gougeSpeed:3.2,deepTol:1.45,over:.7,mult:1.0,name:'Soyacak'},o.ud);return g;
 }
-const knife=makeKnife(),peeler=makePeeler();scene.add(knife,peeler);
-[knife,peeler].forEach(t=>{let i=0;t.traverse(m=>{if(m.isMesh){m.material.depthTest=false;m.renderOrder=10+(i++);m.castShadow=true;}});});
+const knife=makeKnife();
+const SHOP=[
+ {id:'soyacak',price:400,tl:'₺29,99',desc:'Geniş ağız, derin kesmeye karşı toleranslı, üst üste geçince az puan kaybı.',obj:makePeeler()},
+ {id:'santoku',price:900,tl:'₺49,99',desc:'Şam çeliği şef bıçağı: daha geniş ve keskin, hızlı harekette bile temiz keser, ×1.35 puan.',obj:makeKnife({dam:true,tall:1.35,handle:0x151515,ud:{name:'Şef Bıçağı',brush:0.135,gougeSpeed:3.3,deepTol:1.45,over:.8,mult:1.35}})},
+ {id:'altin',price:1800,tl:'₺79,99',desc:'Altın soyacak: en geniş ağız, neredeyse hiç derin kesmez, ×1.2 puan.',obj:makePeeler({steel:0xe8c46a,rub:0x181818,ring:0x3a3a3a,ud:{name:'Altın Soyacak',brush:0.2,gougeSpeed:4.2,deepTol:1.6,over:.5,mult:1.2}})}
+];
+let coins=0,owned={},equip=null;
+try{coins=+localStorage.getItem('ps_coins')||0;owned=JSON.parse(localStorage.getItem('ps_owned')||'{}');equip=localStorage.getItem('ps_equip');}catch(e){}
+if(location.hash==='#test')coins=Math.max(coins,5000);
+const peeler=SHOP[0].obj;
+function equipped(){const e=SHOP.find(x=>x.id===equip&&owned[x.id]);return e?e.obj:null;}
+function tableTools(){const e=equipped();return e?[e,knife]:[knife];}
+function saveShop(){try{localStorage.setItem('ps_coins',coins);localStorage.setItem('ps_owned',JSON.stringify(owned));localStorage.setItem('ps_equip',equip||'');}catch(e){}}
+scene.add(knife);SHOP.forEach(x=>scene.add(x.obj));
+[knife,...SHOP.map(x=>x.obj)].forEach(t=>{let i=0;t.traverse(m=>{if(m.isMesh){m.material.depthTest=false;m.renderOrder=10+(i++);m.castShadow=true;}});});
 let held=null;
 
 // ---------- Kabuk parçaları ----------
@@ -306,8 +342,9 @@ function toScreen(v){tmp.copy(v).project(camera);return[(tmp.x+1)/2*Wd,(1-tmp.y)
 function visWidthAt(z){const d=camera.position.z-z;return 2*d*Math.tan(THREE.MathUtils.degToRad(20))*camera.aspect;}
 function hitsMesh(x,y){ndc.set(x/Wd*2-1,-(y/Hd)*2+1);ray.setFromCamera(ndc,camera);return mesh&&ray.intersectObject(mesh,false).length>0;}
 function placeRest(){
-  const z=1.0,vw=visWidthAt(z);const sc=Math.min(1.1,vw*0.42/2.1);restScale=sc;
-  for(const[t,sx]of[[peeler,0.1],[knife,0.54]]){if(t===held)continue;t.scale.setScalar(sc);t.position.copy(screenToPlane(Wd*sx,Hd*0.9,z));t.rotation.set(-0.5,0,0.06);}
+  const z=1.0,vw=visWidthAt(z);const sc=Math.min(1.6,vw*0.27);restScale=sc;
+  const tt=tableTools();for(const x of SHOP)x.obj.visible=tt.includes(x.obj);
+  for(const[t,sx,sy]of tt.length>1?[[tt[0],0.1,0.8],[knife,0.1,0.92]]:[[knife,0.22,0.88]]){if(t===held)continue;t.scale.setScalar(sc*(t===hover?1.12:1));t.position.copy(screenToPlane(Wd*sx,Hd*sy,z));t.rotation.set(-0.25,0,0.04);}
 }
 
 // ---------- Ses ----------
@@ -326,7 +363,7 @@ function stamp(u,v,ru,rv,deep){
   for(let j=j0;j<=j1;j++){const dj=(j+.5-cj)/rcj;if(Math.abs(dj)>1)continue;const half=rci*Math.sqrt(1-dj*dj);
     for(let i=Math.floor(ci-half);i<=Math.ceil(ci+half);i++){const ii=((i%MW)+MW)%MW,k=j*MW+ii,w=cellW[k];
       if(cellS[k]===0){cellS[k]=deep?2:1;cellStroke[k]=strokeId;peelW+=w;newSkin+=w;if(deep)gougeW+=w;else cleanW+=w;}
-      else if(cellStroke[k]!==strokeId&&cellOver[k]!==strokeId){cellOver[k]=strokeId;overW+=w*(deep?2:1);}}}
+      else if(cellStroke[k]!==strokeId&&cellOver[k]!==strokeId){cellOver[k]=strokeId;overW+=w*(deep?2:1)*(held?held.userData.over:1);}}}
   const px=u*TW,py=v*TH,rx=ru*TW,ry=rv*TH;
   sctx.fillStyle=deep?gougePat:fleshPat;bctx.fillStyle=deep?'#4c4c4c':'#6c6c6c';rctx.fillStyle=deep?'#555':'#3a3a3a';
   for(const o of[-1,0,1]){const X=px+o*TW;if(X+rx<0||X-rx>TW)continue;
@@ -381,7 +418,7 @@ function updSlot(S,d,vw,vh,t){
   const W3=wl?(a,b)=>Math.hypot(wl[a].x-wl[b].x,wl[a].y-wl[b].y,wl[a].z-wl[b].z):D;
   const palmN=(D(0,5)+D(0,17)+D(5,17)+D(0,9))/4||1;
   let curled=0;for(const[tp,mc]of[[8,5],[12,9],[16,13],[20,17]])if(W3(tp,0)<W3(mc,0)*(wl?1.38:1.32))curled++;
-  if(curled>=3)S.fist=true;else if(curled<=1)S.fist=false;
+  S.curled=curled;if(curled>=3)S.fist=true;else if(curled<=1)S.fist=false;
   const pr=W3(4,8)/(W3(0,9)||1);if(S.pinch&&pr>0.55)S.pinch=false;else if(!S.pinch&&pr<0.33)S.pinch=true;
   S.grip=S.fist||S.pinch;
   const P=S.pts;S.palmPx=Math.hypot(P[0].x-P[9].x,P[0].y-P[9].y);
@@ -474,10 +511,13 @@ function pollHand(){
 }
 
 // ---------- Alet ve sebze kontrolü ----------
-let prevCut=null,wasDown=false,lastMult=1,lostT=0,liftMsg=0,tipScr=[0,0],holding=false;
+let hover=null,prevCut=null,wasDown=false,lastMult=1,lostT=0,liftMsg=0,tipScr=[0,0],holding=false;
 const qGrab=new THREE.Quaternion(),qProd0=new THREE.Quaternion(),qd=new THREE.Quaternion(),qt=new THREE.Quaternion(),axv=new THREE.Vector3();
+function toolDist(t,x,y){t.updateMatrixWorld();const a=toScreen(new THREE.Vector3(0,0,0).applyMatrix4(t.matrixWorld)),b=toScreen(new THREE.Vector3(t.userData.len,0,0).applyMatrix4(t.matrixWorld));
+  const dx=b[0]-a[0],dy=b[1]-a[1],L2=dx*dx+dy*dy||1,k=clamp(((x-a[0])*dx+(y-a[1])*dy)/L2,0,1);return Math.hypot(x-a[0]-dx*k,y-a[1]-dy*k);}
+function nearTool(x,y,r){let best=null,bd=r;for(const t of tableTools()){if(t===held)continue;const d=toolDist(t,x,y);if(d<bd){bd=d;best=t;}}return best;}
 function toolCenterScreen(t){t.updateMatrixWorld();return toScreen(new THREE.Vector3(t.userData.hc,0,0).applyMatrix4(t.matrixWorld));}
-function grab(t){held=t;lastMult=t.userData.mult;K.palmRef=K.palmN||0;K.depth=1;prevCut=null;lastHit=null;tone(520,.08,'square',.12);
+function grab(t){held=t;hover=null;lastMult=t.userData.mult;K.palmRef=K.palmN||0;K.depth=1;prevCut=null;lastHit=null;tone(520,.08,'square',.12);
   msg(t.userData.name+' elinde!'+(mode==='cam'?' Geri çekersen kalkar, fazla yaklaştırırsan derin keser.':''),'#6fd86a',2.2);if(state==='pick')startCount();}
 function doCut(sx,sy,dt,it,depthBad){
   const sp=prevCut?Math.hypot(sx-prevCut.x,sy-prevCut.y)/minD/dt:0;
@@ -488,7 +528,7 @@ function doCut(sx,sy,dt,it,depthBad){
 }
 function touchTools(dt,it){
   if(state==='pick'&&inp.seen&&inp.tap){
-    for(const t of[knife,peeler]){const[sx,sy]=toolCenterScreen(t);if(Math.hypot(sx-inp.x,sy-inp.y)<minD*.16){grab(t);break;}}
+    const t=nearTool(inp.x,inp.y,minD*.14);if(t)grab(t);
   }
   if(state==='pick'&&inp.seen&&!inp.down)inp.seen=false;
   wasDown=inp.down;inp.tap=false;
@@ -503,21 +543,23 @@ function touchTools(dt,it){
 function camTools(dt,it,now){
   if(!K.seen){lostT+=dt;prevCut=null;lastHit=null;if(lostT>1.5&&(state==='pick'||state==='play')&&msgT<.3)msg(rotMode==='manual'?'Sağ elini kameraya göster':'Elini kameraya göster','#3ce0ff',1);return;}
   lostT=0;
-  if(!held&&K.grip&&(state==='pick'||state==='play')){
-    for(const t of[knife,peeler]){const[sx,sy]=toolCenterScreen(t);if(Math.hypot(sx-K.cx,sy-K.cy)<minD*.2){grab(t);break;}}
-  }
+  if(!held&&(state==='pick'||state==='play')){
+    const t=nearTool(K.cx,K.cy,minD*.19)||nearTool(K.pts[9].x,K.pts[9].y,minD*.19);
+    if(t!==hover){hover=t;placeRest();if(t&&msgT<.6)msg('Yumruk yap: '+t.userData.name.toLowerCase()+' eline gelsin','#ffc83a',1.2);}
+    if(t&&(K.grip||K.curled>=2)){hover=null;grab(t);}
+  }else if(hover){hover=null;placeRest();}
   if(!held)return;
-  if(!K.grip){K.openT+=dt;if(K.openT>.45){const n=held.userData.name;held=null;placeRest();prevCut=null;lastHit=null;msg(n+' düştü — yumruk yapıp tekrar al','#ffc83a',1.6);return;}}else K.openT=0;
+  if(!K.grip&&K.curled<=1){K.openT+=dt;if(K.openT>.8){const n=held.userData.name;held=null;placeRest();prevCut=null;lastHit=null;msg(n+' düştü — yumruk yapıp tekrar al','#ffc83a',1.6);return;}}else K.openT=0;
   const p=K.pts;let dx=p[5].x-p[17].x,dy=p[5].y-p[17].y;const L=Math.hypot(dx,dy)||1;dx/=L;dy/=L;
   const palmW=screenToPlane(K.cx,K.cy,1.3),wA=screenToPlane(p[5].x,p[5].y,1.3),wB=screenToPlane(p[17].x,p[17].y,1.3);
   const u=held.userData;
-  const ts=clamp(wA.distanceTo(wB)*1.5/u.hlen,restScale*.7,restScale*1.7);
+  const ts=clamp(wA.distanceTo(wB)*1.9/u.hlen,restScale*.95,restScale*1.6);
   const s=held.scale.x+(ts-held.scale.x)*.25;held.scale.setScalar(s);
   const dw=new THREE.Vector3(dx,-dy,0);
   const tip=palmW.clone().addScaledVector(dw,u.hc*s);
   held.rotation.set(0.25,0,Math.atan2(dy,-dx));
   held.position.copy(tip);tipScr=toScreen(palmW.clone().addScaledVector(dw,(u.hc-u.cut)*s));
-  const dv=K.palmRef?K.depth:1,lifted=dv<.85,deep=dv>1.35;
+  const dv=K.palmRef?K.depth:1,lifted=dv<.85,deep=dv>u.deepTol;
   if(state==='play'&&!lifted){
     const r=doCut(tipScr[0],tipScr[1],dt,it,deep);
     if(r)held.position.copy(r.hit.point).addScaledVector(dw,u.cut*s);
@@ -567,16 +609,32 @@ function finish(){
   $('score').textContent=finalScore;$('rC').textContent=Math.round(cov*100)+'%';$('rQ').textContent=Math.round(q*100)+'%';$('rG').textContent=gouges;$('rT').textContent=tb;
   const bk='ps_best_'+it.id+'_'+rotMode;let best=0;try{best=+localStorage.getItem(bk)||0;if(finalScore>best){best=finalScore;localStorage.setItem(bk,best);}}catch(e){best=Math.max(best,finalScore);}
   $('rN').textContent=it.ad+(rotMode==='manual'?', elle':'');$('rB').textContent=best;
+  const earned=Math.round(finalScore/10);coins+=earned;saveShop();$('rA').textContent='+'+earned;coinUI();
   tone(660,.15,'sine',.2);setTimeout(()=>tone(880,.25,'sine',.2),150);
   setTimeout(()=>{show('result',true);show('hud',false);show('depth',false);show('dl',false);},700);
 }
-function toMenu(){state='menu';show('result',false);show('hud',false);show('quit',false);show('depth',false);show('dl',false);show('big',false);show('menu',true);msg('',null,0);if(scrape)scrape.g.gain.value=0;}
+function toMenu(){state='menu';coinUI();show('result',false);show('hud',false);show('quit',false);show('depth',false);show('dl',false);show('big',false);show('menu',true);msg('',null,0);if(scrape)scrape.g.gain.value=0;}
 function qual(){const d=cleanW+1.6*gougeW+0.35*overW;return d>0?cleanW/d:1;}
 function updHud(){const c=peelW/totalW,q=qual();$('time').textContent=Math.ceil(timeLeft);$('time').classList.toggle('low',timeLeft<10);
   $('cv').textContent=Math.round(c*100)+'%';$('qv').textContent=Math.round(q*100)+'%';$('cb').firstChild.style.width=Math.min(100,c*100)+'%';$('qb').firstChild.style.width=q*100+'%';}
 $('bCam').onclick=()=>begin('cam');$('bTouch').onclick=()=>begin('touch');
 $('bAgain').onclick=()=>newRound();$('bNext').onclick=()=>{itemIdx=(itemIdx+1)%ITEMS.length;document.querySelectorAll('.it').forEach((x,i)=>x.classList.toggle('on',i===itemIdx));newRound();};
 $('bMenu').onclick=toMenu;$('quit').onclick=toMenu;
+function coinUI(){document.querySelectorAll('.cv2').forEach(e=>e.textContent=coins);$('coin').textContent=coins+' altın';}
+function renderShop(){
+  const free=`<div class="card${equip?'':' on'}"><h3>Mutfak Bıçağı<em>ücretsiz</em></h3><p>Standart bıçak, her zaman masada. Dar ağız, ×1.2 puan.</p><div class="row"><button class="alt" data-eq="">${equip?'Sadece bıçak':'Kullanılıyor'}</button></div></div>`;
+  $('shopList').innerHTML=free+SHOP.map(x=>{const u=x.obj.userData,own=owned[x.id],on=own&&equip===x.id;
+    return `<div class="card${on?' on':''}"><h3>${u.name}<em>${own?'senin':x.price+' altın'}</em></h3><p>${x.desc}</p><div class="row">${own?`<button class="alt" data-eq="${x.id}">${on?'Kullanılıyor':'Masaya koy'}</button>`:`<button data-buy="${x.id}" ${coins<x.price?'disabled':''}>${x.price} altınla al</button><button class="alt" data-tl="${x.id}">${x.tl}</button>`}</div></div>`;}).join('');
+  coinUI();
+}
+function buyTool(id){const x=SHOP.find(s=>s.id===id);if(!x||owned[id]||coins<x.price)return false;coins-=x.price;owned[id]=true;equip=id;saveShop();placeRest();renderShop();$('shopMsg').textContent=x.obj.userData.name+' senin! Masaya koydum.';tone(880,.12,'sine',.2);return true;}
+$('shopList').onclick=e=>{const b=e.target.closest('button');if(!b)return;
+  if(b.dataset.buy)buyTool(b.dataset.buy);
+  else if(b.dataset.eq!==undefined){equip=b.dataset.eq||null;saveShop();placeRest();renderShop();$('shopMsg').textContent='';}
+  else if(b.dataset.tl)$('shopMsg').textContent='Gerçek parayla satın alma, oyunun App Store / Google Play sürümünde açılacak. Şimdilik oynayarak altın kazan.';};
+$('bShop').onclick=()=>{show('menu',false);show('shop',true);$('shopMsg').textContent='';renderShop();};
+$('bShopBack').onclick=()=>{show('shop',false);show('menu',true);coinUI();};
+coinUI();
 
 // ---------- Döngü ----------
 let tPrev=performance.now(),tAll=0;
@@ -610,7 +668,7 @@ resize();buildItem(ITEMS[0]);requestAnimationFrame(loop);
 
 window.__sim={get state(){return state},get cov(){return peelW/totalW},get q(){return qual()},get held(){return held&&held.userData.name},get gouges(){return gouges},get time(){return timeLeft},
   get holding(){return holding},get quat(){return outer.quaternion.toArray().map(v=>+v.toFixed(3))},
-  screenOf:n=>toolCenterScreen(n==='knife'?knife:peeler),center:()=>toScreen(new THREE.Vector3()),
+  screenOf:n=>toolCenterScreen(n==='knife'?knife:equipped()||peeler),get coins(){return coins},buy:id=>buyTool(id),center:()=>toScreen(new THREE.Vector3()),
   finish:()=>{timeLeft=0.01;},tip:()=>tipScr,setMode:m=>{mode=m;show('depth',m==='cam');show('dl',m==='cam');},setRot:r=>{rotMode=r;},dbg:()=>({K:[K.seen,K.grip,K.label,Math.round(K.cx),Math.round(K.cy)],B:[Bh.seen,Bh.grip,Bh.label,Math.round(Bh.cx),Math.round(Bh.cy)],held:held&&held.userData.name})};
 }
 </script>
