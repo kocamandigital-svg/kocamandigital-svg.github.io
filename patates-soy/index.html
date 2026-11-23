@@ -14,7 +14,8 @@
    LAYOUT: HUD üstte ortada, derinlik çubuğu sağda, kamera sol altta */
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html,body{height:100%;background:#000;color:#f6efe0;font-family:'Baloo 2',system-ui,sans-serif;overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none}
-#c{position:fixed;inset:0;width:100%;height:100%;display:block}
+#c,#xr{position:fixed;inset:0;width:100%;height:100%;display:block}
+#xr{z-index:4;pointer-events:none}
 .ov{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:max(20px,env(safe-area-inset-top)) 18px max(20px,env(safe-area-inset-bottom));background:rgba(0,0,0,.78);z-index:10;text-align:center;overflow-y:auto}
 .hide{display:none!important}
 h1{font-size:clamp(40px,11vw,64px);line-height:1;font-weight:800;color:#f2d98a;letter-spacing:.5px}
@@ -37,7 +38,7 @@ h1 span{color:#ff8a1f}
 .bar b u{display:block;height:100%;width:0;background:#f2d98a;transition:width .15s}
 #qb u{background:#6fd86a}
 #depth{position:fixed;right:max(10px,env(safe-area-inset-right));top:50%;transform:translateY(-50%);width:16px;height:180px;border-radius:8px;background:#1c1c1c;z-index:5;pointer-events:none;overflow:hidden}
-#depth:before{content:'';position:absolute;left:0;right:0;top:10%;height:52%;background:rgba(111,216,106,.3)}
+#depth:before{content:'';position:absolute;inset:0;background:linear-gradient(#ff4a3a55 0 20%,#6fd86a4d 20% 77%,#ffffff12 77%)}
 #depth i{position:absolute;left:-2px;right:-2px;height:6px;border-radius:3px;background:#fff;top:50%}
 #dl{position:fixed;right:max(4px,env(safe-area-inset-right));top:calc(50% + 100px);font-size:12px;z-index:5;opacity:.7;width:40px;text-align:center;pointer-events:none}
 #msg{position:fixed;left:50%;bottom:max(22%,120px);transform:translateX(-50%);z-index:6;font-size:22px;font-weight:800;text-align:center;pointer-events:none;text-shadow:0 2px 10px #000;max-width:92vw;line-height:1.15;transition:opacity .3s}
@@ -56,7 +57,7 @@ h1 span{color:#ff8a1f}
 </style>
 </head>
 <body>
-<canvas id="c"></canvas>
+<canvas id="c"></canvas><canvas id="xr"></canvas>
 <div id="hud" class="hide">
   <div id="time">60</div>
   <div class="bars">
@@ -77,7 +78,7 @@ h1 span{color:#ff8a1f}
   <div class="items" id="items"></div>
   <button class="btn" id="bCam">Kamerayla oyna</button>
   <button class="btn alt" id="bTouch">Dokunarak oyna</button>
-  <p class="note">Başparmak ile işaret parmağını birleştir: aleti tutarsın ve kesersin. Telefonu dik tut, elin kameradan 30–50 cm uzakta olsun.</p>
+  <p class="note">Elin ekranda röntgen gibi görünür. Aletin üstünde yumruk yap: kavrarsın. Elini açarsan düşer. Elini geri çekersen bıçak kalkar, fazla yaklaştırırsan derin keser. Telefonu sabitle, elin kameradan 30–60 cm uzakta olsun.</p>
 </div>
 
 <div id="result" class="ov hide">
@@ -219,7 +220,7 @@ function makeKnife(){
   const bol=new THREE.Mesh(new THREE.BoxGeometry(0.06,0.24,0.06),new THREE.MeshPhongMaterial({color:0xb8bec6,shininess:90}));bol.position.set(1.18,-0.06,0);g.add(bol);
   const h=new THREE.Mesh(new THREE.CylinderGeometry(0.085,0.075,0.85,20),new THREE.MeshStandardMaterial({color:0x3b2314,roughness:.55}));h.rotation.z=Math.PI/2;h.scale.set(1,1,0.62);h.position.set(1.62,-0.06,0);g.add(h);
   const rm=new THREE.MeshPhongMaterial({color:0xe8e8e8,shininess:120});for(const x of[1.4,1.62,1.84]){const r=new THREE.Mesh(new THREE.CylinderGeometry(0.022,0.022,0.12,10),rm);r.rotation.x=Math.PI/2;r.position.set(x,-0.06,0);g.add(r);}
-  g.userData={len:2.05,center:1.0,brush:0.105,gougeSpeed:2.4,mult:1.2,name:'Bıçak'};return g;
+  g.userData={len:2.05,center:1.0,hc:1.32,hlen:0.85,cut:0.3,brush:0.105,gougeSpeed:2.4,mult:1.2,name:'Bıçak'};return g;
 }
 function makePeeler(){
   const g=new THREE.Group();const met=new THREE.MeshPhongMaterial({color:0xd9dde2,specular:0xffffff,shininess:120});
@@ -227,9 +228,10 @@ function makePeeler(){
   for(const s of[-1,1]){const pr=new THREE.Mesh(new THREE.CylinderGeometry(0.018,0.018,0.42,8),met);pr.rotation.z=Math.PI/2+s*0.45;pr.position.set(0.19,s*0.12,0);g.add(pr);}
   const h=new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.09,0.95,20),new THREE.MeshStandardMaterial({color:0xff8a1f,roughness:.45}));h.rotation.z=Math.PI/2;h.scale.set(1,1,0.7);h.position.set(0.85,0,0);g.add(h);
   const ring=new THREE.Mesh(new THREE.TorusGeometry(0.04,0.012,8,20),met);ring.position.set(1.36,0,0);g.add(ring);
-  g.userData={len:1.42,center:0.75,brush:0.15,gougeSpeed:3.2,mult:1.0,name:'Soyacak'};return g;
+  g.userData={len:1.42,center:0.75,hc:0.55,hlen:0.95,cut:0.0,brush:0.15,gougeSpeed:3.2,mult:1.0,name:'Soyacak'};return g;
 }
 const knife=makeKnife(),peeler=makePeeler();scene.add(knife,peeler);
+[knife,peeler].forEach(t=>{let i=0;t.traverse(m=>{if(m.isMesh){m.material.depthTest=false;m.renderOrder=10+(i++);}});});
 let held=null;
 
 // ---------- Parçacıklar ----------
@@ -248,7 +250,7 @@ function fitCamera(){
   camera.position.z=Math.max(ext*1.32/(tanH*Math.min(1,asp)),(ext*1.25)/tanH)+0.3;
   camera.updateProjectionMatrix();camera.updateMatrixWorld();placeRest();
 }
-function resize(){Wd=innerWidth;Hd=innerHeight;minD=Math.min(Wd,Hd);renderer.setSize(Wd,Hd,false);fitCamera();}
+function resize(){Wd=innerWidth;Hd=innerHeight;minD=Math.min(Wd,Hd);renderer.setSize(Wd,Hd,false);const r=Math.min(devicePixelRatio||1,2);xr.width=Wd*r;xr.height=Hd*r;fitCamera();}
 addEventListener('resize',resize);
 
 const ray=new THREE.Raycaster(),ndc=new THREE.Vector2(),plane=new THREE.Plane(new THREE.Vector3(0,0,1),-1.3),tmp=new THREE.Vector3();
@@ -256,7 +258,7 @@ function screenToPlane(x,y,z){ndc.set(x/Wd*2-1,-(y/Hd)*2+1);ray.setFromCamera(nd
 function toScreen(v){tmp.copy(v).project(camera);return[(tmp.x+1)/2*Wd,(1-tmp.y)/2*Hd];}
 function visWidthAt(z){const d=camera.position.z-z;return 2*d*Math.tan(THREE.MathUtils.degToRad(20))*camera.aspect;}
 function placeRest(){
-  const z=1.0,vw=visWidthAt(z);const sc=Math.min(1.1,vw*0.42/2.05);
+  const z=1.0,vw=visWidthAt(z);const sc=Math.min(1.1,vw*0.42/2.05);restScale=sc;
   for(const[t,sx]of[[peeler,0.1],[knife,0.54]]){if(t===held)continue;t.scale.setScalar(sc);const p=screenToPlane(Wd*sx,Hd*0.9,z);t.position.copy(p);t.rotation.set(-0.5,0,0.06);}
 }
 
@@ -306,47 +308,138 @@ function cutAt(sx,sy,speed,depthBad){
 }
 
 // ---------- Girdi (el + dokunma) ----------
-const inp={x:-1,y:-1,down:false,seen:false,lastSeen:0,depth:1};
-let mode='touch',palmRef=0,partT=0;
+const inp={x:-1,y:-1,down:false,seen:false,lastSeen:0,depth:1,tap:false,palm:0};
+let mode='touch',palmRef=0,partT=0,restScale=1;
 canvas.addEventListener('pointerdown',e=>{if(mode!=='touch')return;inp.x=e.clientX;inp.y=e.clientY;inp.down=true;inp.seen=true;inp.tap=true;});
 canvas.addEventListener('pointermove',e=>{if(mode!=='touch')return;inp.x=e.clientX;inp.y=e.clientY;inp.seen=true;});
 addEventListener('pointerup',()=>{if(mode==='touch'){inp.down=false;}});
 addEventListener('pointercancel',()=>{if(mode==='touch')inp.down=false;});
 
-let pinchOn=false,sx0=null;
-function processHand(lm){
-  const d=(a,b)=>Math.hypot((lm[a].x-lm[b].x)*1.333,lm[a].y-lm[b].y);
-  const palm=d(0,9)||1e-3,pr=d(4,8)/palm;
-  if(pinchOn&&pr>0.48)pinchOn=false;else if(!pinchOn&&pr<0.34)pinchOn=true;
-  const mx=1-(lm[4].x+lm[8].x)/2,my=(lm[4].y+lm[8].y)/2;
-  let X=((mx-.5)*1.35+.5)*Wd,Y=((my-.5)*1.35+.5)*Hd;
-  if(sx0){X=sx0.x+(X-sx0.x)*.55;Y=sx0.y+(Y-sx0.y)*.55;}sx0={x:X,y:Y};
-  inp.x=X;inp.y=Y;inp.down=pinchOn;inp.seen=true;inp.lastSeen=performance.now();
-  if(held&&palmRef)inp.depth=inp.depth*.8+(palm/palmRef)*.2;
-  inp.palm=palm;
-  const hc=$('hc').getContext('2d');hc.clearRect(0,0,160,120);hc.fillStyle=pinchOn?'#ff8a1f':'#f2d98a';for(const p of lm){hc.beginPath();hc.arc(p.x*160,p.y*120,2.4,0,7);hc.fill();}
+// One Euro filtresi: yavaşta titremesiz, hızlıda gecikmesiz
+const filt=[];for(let i=0;i<42;i++)filt.push({x:null,dx:0,t:0});
+function oe(f,v,t){if(f.x===null){f.x=v;f.t=t;return v;}const dt=Math.max(.004,(t-f.t)/1000);f.t=t;const a=c=>1/(1+1/(2*Math.PI*c*dt));
+  f.dx+=((v-f.x)/dt-f.dx)*a(1);f.x+=(v-f.x)*a(1.3+0.007*Math.abs(f.dx));return f.x;}
+const hand={pts:null,grip:false,fist:false,pinch:false,palmPx:0,cx:0,cy:0,alpha:0,openT:0};
+function processHand(lm,vw,vh){
+  const t=performance.now();vw=vw||640;vh=vh||480;
+  if(now0&&t-inp.lastSeen>500)filt.forEach(f=>f.x=null);
+  const s=Math.max(Wd/vw,Hd/vh)*1.1;
+  const pts=lm.map((p,i)=>({x:oe(filt[i*2],Wd/2+((1-p.x)-.5)*vw*s,t),y:oe(filt[i*2+1],Hd/2+(p.y-.5)*vh*s,t)}));
+  const D=(a,b)=>Math.hypot((lm[a].x-lm[b].x)*vw,(lm[a].y-lm[b].y)*vh);
+  const palmN=(D(0,5)+D(0,17)+D(5,17)+D(0,9))/4||1;
+  let curled=0;for(const[tp,mc]of[[8,5],[12,9],[16,13],[20,17]])if(D(tp,0)<D(mc,0)*1.32)curled++;
+  if(curled>=3)hand.fist=true;else if(curled<=1)hand.fist=false;
+  const pr=D(4,8)/palmN;if(hand.pinch&&pr>0.5)hand.pinch=false;else if(!hand.pinch&&pr<0.3)hand.pinch=true;
+  hand.grip=hand.fist||hand.pinch;hand.pts=pts;
+  hand.palmPx=Math.hypot(pts[0].x-pts[9].x,pts[0].y-pts[9].y);
+  hand.cx=(pts[0].x+pts[5].x+pts[9].x*2+pts[13].x+pts[17].x)/6;hand.cy=(pts[0].y+pts[5].y+pts[9].y*2+pts[13].y+pts[17].y)/6;
+  inp.x=hand.cx;inp.y=hand.cy;inp.down=hand.grip;inp.seen=true;inp.lastSeen=t;inp.palm=palmN;now0=true;
+  if(held&&palmRef)inp.depth=inp.depth*.75+(palmN/palmRef)*.25;
+  const hc=$('hc').getContext('2d');hc.clearRect(0,0,160,120);hc.fillStyle=hand.grip?'#ff8a1f':'#3ce0ff';for(const p of lm){hc.beginPath();hc.arc(p.x*160,p.y*120,2.4,0,7);hc.fill();}
 }
+let now0=false;
 window.__hand=processHand;
+
+// ---------- Röntgen el ----------
+const xr=$('xr'),xc=xr.getContext('2d');
+const FING=[[0,1,2,3,4],[5,6,7,8],[9,10,11,12],[13,14,15,16],[17,18,19,20]];
+const FCOL=['#ff9a3c','#3ce0ff','#6dff8a','#ff5fd2','#ffe14a'];
+function drawXray(dt){
+  const dpr=xr.width/Wd;xc.setTransform(1,0,0,1,0,0);xc.clearRect(0,0,xr.width,xr.height);
+  hand.alpha=inp.seen&&mode==='cam'&&state!=='menu'?Math.min(1,hand.alpha+dt*6):Math.max(0,hand.alpha-dt*3);
+  if(!hand.pts||hand.alpha<=0)return;
+  const p=hand.pts,hs=Math.max(30,hand.palmPx),A=hand.alpha*(held?.55:1);xc.setTransform(dpr,0,0,dpr,0,0);xc.globalAlpha=A;xc.lineCap='round';xc.lineJoin='round';
+  const palm=[0,1,5,9,13,17];
+  xc.beginPath();palm.forEach((k,i)=>i?xc.lineTo(p[k].x,p[k].y):xc.moveTo(p[k].x,p[k].y));xc.closePath();
+  const g=xc.createRadialGradient(hand.cx,hand.cy,0,hand.cx,hand.cy,hs*1.1);
+  g.addColorStop(0,hand.grip?'rgba(255,138,31,.38)':'rgba(90,190,255,.28)');g.addColorStop(1,hand.grip?'rgba(255,90,20,.08)':'rgba(60,120,255,.06)');
+  xc.fillStyle=g;xc.fill();xc.strokeStyle=hand.grip?'rgba(255,170,90,.55)':'rgba(140,210,255,.45)';xc.lineWidth=hs*.05;xc.stroke();
+  // et (yarı saydam kalın çizgi)
+  FING.forEach((f,i)=>{const ch=i===0?f:[0,...f];xc.strokeStyle=FCOL[i];xc.globalAlpha=A*.17;xc.lineWidth=hs*.34;xc.beginPath();ch.forEach((k,j)=>j?xc.lineTo(p[k].x,p[k].y):xc.moveTo(p[k].x,p[k].y));xc.stroke();});
+  // kemikler
+  xc.globalAlpha=A;xc.shadowBlur=hs*.22;
+  const bone=(a,b,c)=>{xc.shadowColor=c;xc.strokeStyle='rgba(235,248,255,.92)';xc.lineWidth=hs*.07;xc.beginPath();xc.moveTo(p[a].x,p[a].y);xc.lineTo(p[b].x,p[b].y);xc.stroke();};
+  FING.forEach((f,i)=>{const ch=i===0?f:[0,...f];for(let j=1;j<ch.length;j++)bone(ch[j-1],ch[j],FCOL[i]);});
+  bone(5,9,'#9fe8ff');bone(9,13,'#9fe8ff');bone(13,17,'#9fe8ff');
+  // eklemler
+  FING.forEach((f,i)=>f.forEach((k,j)=>{xc.shadowColor=FCOL[i];xc.fillStyle=FCOL[i];xc.beginPath();xc.arc(p[k].x,p[k].y,hs*(j===f.length-1?.085:.06),0,7);xc.fill();}));
+  xc.fillStyle='#e8f6ff';xc.shadowColor='#9fe8ff';xc.beginPath();xc.arc(p[0].x,p[0].y,hs*.09,0,7);xc.fill();
+  xc.shadowBlur=0;xc.globalAlpha=1;
+}
 
 let landmarker=null,video=$('vid'),lastVT=-1;
 async function startCamera(){
   if(!window.isSecureContext)throw new Error('Kamera için sayfa https üzerinden açılmalı.');
   if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia)throw new Error('Bu tarayıcı kameraya izin vermiyor.');
   msg('Kamera açılıyor…','#f2d98a',99);
-  const st=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:640},height:{ideal:480}},audio:false});
+  const st=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:640},height:{ideal:480},frameRate:{ideal:30}},audio:false});
   video.srcObject=st;await video.play().catch(()=>{});
   msg('El takibi yükleniyor…','#f2d98a',99);
   const vis=await import(MP_URL);
   const fs=await vis.FilesetResolver.forVisionTasks(MP_WASM);
-  const opt=dg=>({baseOptions:{modelAssetPath:MP_MODEL,delegate:dg},runningMode:'VIDEO',numHands:1,minHandDetectionConfidence:.5,minHandPresenceConfidence:.5,minTrackingConfidence:.5});
+  const opt=dg=>({baseOptions:{modelAssetPath:MP_MODEL,delegate:dg},runningMode:'VIDEO',numHands:1,minHandDetectionConfidence:.35,minHandPresenceConfidence:.3,minTrackingConfidence:.3});
   try{landmarker=await vis.HandLandmarker.createFromOptions(fs,opt('GPU'));}catch(e){landmarker=await vis.HandLandmarker.createFromOptions(fs,opt('CPU'));}
   $('cam').classList.remove('hide');msg('',null,0);
 }
 function pollHand(){
   if(!landmarker||video.readyState<2||video.currentTime===lastVT)return;lastVT=video.currentTime;
-  const r=landmarker.detectForVideo(video,performance.now());
-  if(r&&r.landmarks&&r.landmarks.length)processHand(r.landmarks[0]);
+  let r=null;try{r=landmarker.detectForVideo(video,performance.now());}catch(e){return;}
+  if(r&&r.landmarks&&r.landmarks.length)processHand(r.landmarks[0],video.videoWidth,video.videoHeight);
   else{$('hc').getContext('2d').clearRect(0,0,160,120);}
+}
+
+// ---------- Alet kontrolü ----------
+function toolCenterScreen(t){t.updateMatrixWorld();return toScreen(new THREE.Vector3(t.userData.hc,0,0).applyMatrix4(t.matrixWorld));}
+let lastMult=1;
+function grab(t){held=t;lastMult=t.userData.mult;palmRef=inp.palm||0;inp.depth=1;prevCut=null;lastHit=null;tone(520,.08,'square',.12);
+  msg(t.userData.name+' elinde! Geri çekersen kalkar, fazla yaklaştırırsan derin keser.','#6fd86a',2.2);if(state==='pick')startCount();}
+function doCut(sx,sy,dt,it,depthBad){
+  const sp=prevCut?Math.hypot(sx-prevCut.x,sy-prevCut.y)/minD/dt:0;
+  if(!prevCut){strokeId++;lastHit=null;}
+  const r=cutAt(sx,sy,sp,depthBad);prevCut={x:sx,y:sy};
+  if(r&&r.ns>0){partT-=dt;if(partT<=0){partT=.045;spawnPart(r.hit.point,it.skin);}cutAmt=Math.min(1,cutAmt+.35);}
+  return r;
+}
+function touchTools(dt,it){
+  if(state==='pick'&&inp.seen&&((inp.down&&!wasDown)||inp.tap)){
+    for(const t of[knife,peeler]){const[sx,sy]=toolCenterScreen(t);if(Math.hypot(sx-inp.x,sy-inp.y)<minD*.16){grab(t);break;}}
+  }
+  if(state==='pick'&&inp.seen&&!inp.down)inp.seen=false;
+  wasDown=inp.down;inp.tap=false;
+  if(!held)return;
+  const sc=held.scale.x;held.position.lerp(screenToPlane(inp.x,inp.y,1.3),.5);
+  const tz=inp.down&&state==='play'?-0.85:-0.55;
+  held.rotation.x+=(0.15-held.rotation.x)*.3;held.rotation.y+=(0.35-held.rotation.y)*.3;held.rotation.z+=(tz-held.rotation.z)*.3;
+  if(inp.down&&state==='play'&&inp.seen){const r=doCut(inp.x,inp.y,dt,it,false);if(r){held.position.lerp(r.hit.point,.6);held.position.z+=0.02;}held.position.y+=Math.sin(tAll*60)*.006;}
+  else{prevCut=null;lastHit=null;}
+  held.scale.setScalar(sc);
+}
+let lostT=0,liftMsg=0,tipScr=[0,0];
+function camTools(dt,it,now){
+  if(!inp.seen){lostT+=dt;prevCut=null;lastHit=null;if(lostT>1.5&&(state==='pick'||state==='play')&&msgT<.3)msg('Elini kameraya göster','#3ce0ff',1);return;}
+  lostT=0;
+  // alma: yumruk (ya da çimdik) alet üstünde
+  if(!held&&hand.grip&&(state==='pick'||state==='play')){
+    for(const t of[knife,peeler]){const[sx,sy]=toolCenterScreen(t);if(Math.hypot(sx-hand.cx,sy-hand.cy)<minD*.2){grab(t);break;}}
+  }
+  if(!held)return;
+  // bırakma: el açılınca
+  if(!hand.grip){hand.openT+=dt;if(hand.openT>.45){const n=held.userData.name;held=null;placeRest();prevCut=null;lastHit=null;msg(n+' düştü — yumruk yapıp tekrar al','#ffc83a',1.6);return;}}else hand.openT=0;
+  const p=hand.pts;let dx=p[5].x-p[17].x,dy=p[5].y-p[17].y;const L=Math.hypot(dx,dy)||1;dx/=L;dy/=L;
+  const palmW=screenToPlane(hand.cx,hand.cy,1.3),wA=screenToPlane(p[5].x,p[5].y,1.3),wB=screenToPlane(p[17].x,p[17].y,1.3);
+  const u=held.userData;
+  const ts=Math.max(restScale*.7,Math.min(restScale*1.7,wA.distanceTo(wB)*1.5/u.hlen));
+  const s=held.scale.x+(ts-held.scale.x)*.25;held.scale.setScalar(s);
+  const dw=new THREE.Vector3(dx,-dy,0);
+  const tip=palmW.clone().addScaledVector(dw,u.hc*s);
+  held.rotation.set(0.25,0,Math.atan2(dy,-dx));
+  held.position.copy(tip);tipScr=toScreen(palmW.clone().addScaledVector(dw,(u.hc-u.cut)*s));
+  const dv=palmRef?inp.depth:1,lifted=dv<.85,deep=dv>1.35;
+  if(state==='play'&&!lifted){
+    const[sx,sy]=toScreen(palmW.clone().addScaledVector(dw,(u.hc-u.cut)*s));
+    const r=doCut(sx,sy,dt,it,deep);
+    if(r)held.position.copy(r.hit.point).addScaledVector(dw,u.cut*s);
+  }else{prevCut=null;lastHit=null;if(lifted&&state==='play'&&now-liftMsg>4000){liftMsg=now;msg('Bıçak havada — kesmek için elini biraz öne getir','#9fe8ff',1.2);}}
 }
 
 // ---------- Oyun akışı ----------
@@ -359,18 +452,18 @@ async function begin(m){
   newRound();
 }
 function newRound(){
-  const it=ITEMS[itemIdx];buildItem(it);held=null;placeRest();
+  const it=ITEMS[itemIdx];buildItem(it);held=null;lastMult=1;placeRest();
   parts.forEach(p=>p.visible=false);
   show('result',false);show('hud',true);show('quit',true);show('depth',mode==='cam');show('dl',mode==='cam');
   timeLeft=it.sure;updHud();state='pick';strokeId=0;lastHit=null;inp.down=false;
-  msg(mode==='cam'?'Bıçağı ya da soyacağı al: elini alete götür, başparmak + işaret parmağını birleştir':'Bıçağa ya da soyacağa dokun','#f2d98a',99);
+  msg(mode==='cam'?'Elini bıçağın ya da soyacağın üstüne götür ve yumruk yap':'Bıçağa ya da soyacağa dokun','#f2d98a',99);
 }
 function startCount(){state='count';countT=3.2;show('big',true);msg('',null,0);}
 function finish(){
   if(state!=='play')return;state='result';inp.down=false;if(scrape)scrape.g.gain.value=0;
   const it=ITEMS[itemIdx],cov=peelW/totalW,q=qual();
   const tb=cov>=.9?Math.round(timeLeft*10):0;
-  finalScore=Math.round((cov*700+cov*q*300)*it.mult*(held?held.userData.mult:1)+tb);
+  finalScore=Math.round((cov*700+cov*q*300)*it.mult*lastMult+tb);
   const st=finalScore>=850?3:finalScore>=600?2:finalScore>=300?1:0;
   $('stars').textContent='★'.repeat(st)+'☆'.repeat(3-st);
   $('grade').textContent=['Hiç soyulmamış gibi','Acemi aşçı','Mutfak kalfası','Usta Şef'][st];
@@ -390,48 +483,22 @@ $('bMenu').onclick=toMenu;$('quit').onclick=toMenu;
 
 // ---------- Döngü ----------
 let tPrev=performance.now(),tAll=0,prevCut=null,wasDown=false;
-const tipTarget=new THREE.Vector3();
 function loop(now){
   requestAnimationFrame(loop);
   const dt=Math.min(.05,(now-tPrev)/1000);tPrev=now;tAll+=dt;
-  if(mode==='cam'){pollHand();if(now-inp.lastSeen>350){inp.seen=false;inp.down=false;}}
+  if(mode==='cam'){pollHand();if(now-inp.lastSeen>600){inp.seen=false;inp.down=false;}}
   const it=ITEMS[itemIdx];
   if(mesh){mesh.rotation.y+=dt*(state==='play'?0.75:0.35);
     if(it.lay){outer.rotation.set(Math.sin(tAll*.5)*.35,Math.sin(tAll*.37)*.45,0);}else outer.rotation.set(Math.sin(tAll*.45)*.5,0,Math.sin(tAll*.3)*.12);}
   // imleç
   const cur=$('cur');
-  if(inp.seen&&state!=='menu'&&state!=='result'){cur.style.left=inp.x+'px';cur.style.top=inp.y+'px';cur.classList.toggle('p',inp.down);cur.style.opacity=held?.35:1;}else cur.style.left='-99px';
-  // alet alma
-  if(state==='pick'&&inp.seen&&((inp.down&&!wasDown)||inp.tap)){
-    for(const t of[knife,peeler]){const c=new THREE.Vector3(t.userData.center,0,0).applyMatrix4(t.matrixWorld);const[sx,sy]=toScreen(c);
-      if(Math.hypot(sx-inp.x,sy-inp.y)<minD*.16){held=t;palmRef=inp.palm||0;inp.depth=1;tone(520,.08,'square',.12);msg(t.userData.name+' elinde!','#6fd86a',1.2);startCount();break;}}
-  }
-  if(state==='pick'&&inp.seen&&!inp.down&&mode==='touch')inp.seen=false;
-  wasDown=inp.down;inp.tap=false;
-  // tutulan alet
-  let cutting=false;
-  if(held){
-    const sc=held.scale.x;
-    const p=screenToPlane(inp.x,inp.y,1.3);
-    tipTarget.copy(p);
-    held.position.lerp(tipTarget,.5);
-    const tz=inp.down&&state==='play'?-0.85:-0.55;
-    held.rotation.x+=(0.15-held.rotation.x)*.3;held.rotation.y+=(0.35-held.rotation.y)*.3;held.rotation.z+=(tz-held.rotation.z)*.3;
-    if(inp.down&&state==='play'&&inp.seen){
-      const sp=prevCut?Math.hypot(inp.x-prevCut.x,inp.y-prevCut.y)/minD/dt:0;
-      if(!prevCut){strokeId++;lastHit=null;}
-      const depthBad=mode==='cam'&&palmRef>0&&inp.depth>1.35;
-      const r=cutAt(inp.x,inp.y,sp,depthBad);
-      if(r){cutting=r.ns>0;held.position.lerp(r.hit.point,.6);held.position.z+=0.02;
-        if(r.ns>0){partT-=dt;if(partT<=0){partT=.045;spawnPart(r.hit.point,it.skin);}cutAmt=Math.min(1,cutAmt+.35);} }
-      prevCut={x:inp.x,y:inp.y};
-      held.position.y+=Math.sin(tAll*60)*.006;
-    }else{prevCut=null;lastHit=null;}
-    held.scale.setScalar(sc);
-  }
+  if(mode==='touch'&&inp.seen&&state!=='menu'&&state!=='result'){cur.style.left=inp.x+'px';cur.style.top=inp.y+'px';cur.classList.toggle('p',inp.down);cur.style.opacity=held?.35:1;}else cur.style.left='-99px';
+  // aletler
+  if(mode==='cam')camTools(dt,it,now);else touchTools(dt,it);
   cutAmt*=.85;if(scrape){scrape.g.gain.value=cutAmt*.22;scrape.f.frequency.value=2600+cutAmt*1500;}
   // derinlik göstergesi
-  if(mode==='cam'){const dv=held&&palmRef?inp.depth:1;const y=Math.max(0,Math.min(.96,0.4+(dv-1)*1.5));$('depth').firstChild.style.top=(y*100)+'%';$('depth').firstChild.style.background=dv>1.35?'#ff4a3a':dv>1.2?'#ffc83a':'#fff';}
+  if(mode==='cam'){const dv=held&&palmRef?inp.depth:1;const y=Math.max(0,Math.min(.96,0.6-(dv-1)*1.15));$('depth').firstChild.style.top=(y*100)+'%';$('depth').firstChild.style.background=dv>1.35?'#ff4a3a':dv<.85?'#9a9a9a':'#fff';}
+  drawXray(dt);
   // parçacıklar
   for(const m of parts){if(!m.visible)continue;const u=m.userData;u.life-=dt;if(u.life<=0){m.visible=false;continue;}u.v.y-=4.5*dt;m.position.addScaledVector(u.v,dt);m.rotation.x+=u.w.x*dt;m.rotation.y+=u.w.y*dt;m.rotation.z+=u.w.z*dt;}
   // durumlar
@@ -447,7 +514,7 @@ resize();buildItem(ITEMS[0]);requestAnimationFrame(loop);
 
 window.__sim={get state(){return state},get cov(){return peelW/totalW},get q(){return qual()},get held(){return held&&held.userData.name},get gouges(){return gouges},get time(){return timeLeft},
   screenOf:n=>{const t=n==='knife'?knife:peeler;t.updateMatrixWorld();return toScreen(new THREE.Vector3(t.userData.center,0,0).applyMatrix4(t.matrixWorld));},
-  finish:()=>{timeLeft=0.01;},setMode:m=>{mode=m;show("depth",m==="cam");show("dl",m==="cam");},setTime:s=>{timeLeft=s;}};
+  finish:()=>{timeLeft=0.01;},tip:()=>tipScr,setMode:m=>{mode=m;show("depth",m==="cam");show("dl",m==="cam");},setTime:s=>{timeLeft=s;}};
 }
 </script>
 </body>
